@@ -3,15 +3,16 @@ server:
 
 spring:
   datasource:
+    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: asuzncmi666
-    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver  # добавьте эту строку для явного указания драйвера
   jpa:
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-      dialect: org.hibernate.dialect.MySQL8Dialect
+      dialect: org.hibernate.dialect.MySQL8Dialect  # исправьте отступ
     show-sql: true
 
 indexing-settings:
