@@ -6,13 +6,13 @@ spring:
     url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: asuzncmi666
-    driver-class-name: com.mysql.cj.jdbc.Driver  # добавьте эту строку для явного указания драйвера
+    driver-class-name: com.mysql.cj.jdbc.Driver  # Явное указание драйвера
   jpa:
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-      dialect: org.hibernate.dialect.MySQL8Dialect  # исправьте отступ
+      dialect: org.hibernate.dialect.MySQL8Dialect  # Исправленный отступ
     show-sql: true
 
 indexing-settings:
@@ -33,3 +33,4 @@ indexing-settings:
       name: "Et Cetera Mobile"
     - url: "https://www.svetlovka.ru"
       name: "Svetlovka"
+

@@ -6,12 +6,6 @@ import searchengine.model.Status;
 
 @Controller
 public class DefaultController {
-
-    /**
-     * Метод формирует страницу из HTML-файла index.html,
-     * который находится в папке resources/templates.
-     * Это делает библиотека Thymeleaf.
-     */
     @RequestMapping("/")
     public String index() {
         // Пример использования значений enum Status
