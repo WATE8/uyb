@@ -6,13 +6,13 @@ spring:
     url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: asuzncmi666
-    driver-class-name: com.mysql.cj.jdbc.Driver  # Явное указание драйвера
+    driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-      dialect: org.hibernate.dialect.MySQL8Dialect  # Исправленный отступ
+      dialect: org.hibernate.dialect.MySQL8Dialect
     show-sql: true
 
 indexing-settings:
@@ -34,3 +34,7 @@ indexing-settings:
     - url: "https://www.svetlovka.ru"
       name: "Svetlovka"
 
+crawler:
+  userAgent: "HeliontSearchBot"
+  referrer: "http://www.google.com"
+  delay: 2000

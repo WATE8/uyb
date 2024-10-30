@@ -5,53 +5,47 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
+import searchengine.services.IndexingService;
+
 import java.util.HashMap;
 import java.util.Map;
-import searchengine.services.IndexingService;
 
 @Controller
 @RequiredArgsConstructor
+@RequestMapping("/api")
 public class DefaultController {
+
     private final IndexingService indexingService;
 
-    @RequestMapping("/")
-    public String index() {
-        return "index";
-    }
-
-    @GetMapping("/api/startIndexing")
+    // Запуск полной индексации
+    @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
-        Map<String, Object> response = createResponse();
+        Map<String, Object> response = new HashMap<>();
 
         if (indexingService.isIndexingInProgress()) {
-            return buildErrorResponse(response, "Индексация уже запущена");
+            response.put("result", false);
+            response.put("error", "Индексация уже запущена");
+            return ResponseEntity.badRequest().body(response); // Ошибка в формате спецификации
         }
 
         indexingService.startFullIndexing();
         response.put("result", true);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(response); // Успешный ответ
     }
 
-    @GetMapping("/api/stopIndexing")
+    // Остановка текущей индексации
+    @GetMapping("/stopIndexing")
     public ResponseEntity<Map<String, Object>> stopIndexing() {
-        Map<String, Object> response = createResponse();
+        Map<String, Object> response = new HashMap<>();
 
         if (!indexingService.isIndexingInProgress()) {
-            return buildErrorResponse(response, "Индексация не запущена");
+            response.put("result", false);
+            response.put("error", "Индексация не запущена");
+            return ResponseEntity.badRequest().body(response); // Ошибка в формате спецификации
         }
 
         indexingService.stopIndexing();
         response.put("result", true);
-        return ResponseEntity.ok(response);
-    }
-
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(Map<String, Object> response, String errorMessage) {
-        response.put("result", false);
-        response.put("error", errorMessage);
-        return ResponseEntity.badRequest().body(response);
-    }
-
-    private Map<String, Object> createResponse() {
-        return new HashMap<>();
+        return ResponseEntity.ok(response); // Успешный ответ
     }
 }
