@@ -3,13 +3,13 @@ package searchengine.services;
 import lombok.Getter;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PreDestroy; // Import for the @PreDestroy annotation
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.io.IOException; // Import for IOException
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,7 +25,7 @@ public class IndexingService {
     private final PageRepository pageRepository;
     private final WebCrawler webCrawler;
     private final ExecutorService siteIndexingExecutor = Executors.newCachedThreadPool();
-    private final ExecutorService pageCrawlingExecutor = Executors.newCachedThreadPool(); // New Executor for page crawling
+    private final ForkJoinPool forkJoinPool = new ForkJoinPool(); // Create once at the class level
 
     public IndexingService(SiteRepository siteRepository, PageRepository pageRepository) {
         this.siteRepository = siteRepository;
@@ -55,20 +55,17 @@ public class IndexingService {
         updateSiteStatus(site, Status.INDEXING, null);
         pageRepository.deleteBySiteId(site.getId());
 
+        Document doc;
+
         try {
-            Document doc = webCrawler.fetchPageContent(site.getUrl());
+            doc = webCrawler.fetchPageContent(site.getUrl());
+
             if (doc != null) {
-                // Submit the PageCrawlerTask to the pageCrawlingExecutor
-                pageCrawlingExecutor.submit(new PageCrawlerTask(site, site.getUrl()));
+                forkJoinPool.invoke(new PageCrawlerTask(site, site.getUrl()));
                 updateSiteStatus(site, Status.INDEXED, null);
             } else {
                 updateSiteStatus(site, Status.FAILED, "Не удалось получить содержимое страницы: " + site.getUrl());
             }
-        } catch (IOException e) { // Catching IOException
-            updateSiteStatus(site, Status.FAILED, "Ошибка при загрузке страницы: " + e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt(); // Restore the interrupted status
-            updateSiteStatus(site, Status.FAILED, "Индексация прервана: " + e.getMessage());
         } catch (Exception e) {
             updateSiteStatus(site, Status.FAILED, e.getMessage());
         }
@@ -95,7 +92,7 @@ public class IndexingService {
         });
     }
 
-    private class PageCrawlerTask implements Runnable { // Change to Runnable
+    private class PageCrawlerTask extends RecursiveTask<Void> {
         private final Site site;
         private final String url;
 
@@ -105,36 +102,37 @@ public class IndexingService {
         }
 
         @Override
-        public void run() { // Implement run method
+        protected Void compute() {
             if (stopIndexing.get() || pageRepository.existsBySiteAndPath(site, url)) {
-                return;
+                return null;
             }
 
             try {
                 Document doc = webCrawler.fetchPageContent(url);
                 int statusCode = getStatusCode(url);
-                Page page = new Page(); // Ensure this matches your Page constructor
-                page.setSite(site);
-                page.setPath(url);
-                page.setCode(statusCode);
-                page.setContent(doc.html());
+                Page page = new Page(site, url, statusCode, doc.html());
                 pageRepository.save(page);
 
-                // Create tasks for new links
-                List<String> links = doc.select("a[href]").stream()
+                // Создание задач для новых ссылок
+                List<PageCrawlerTask> subTasks = doc.select("a[href]").stream()
                         .map(link -> link.absUrl("href"))
                         .distinct()
+                        .map(linkUrl -> new PageCrawlerTask(site, linkUrl))
                         .toList();
-                for (String linkUrl : links) {
-                    pageCrawlingExecutor.submit(new PageCrawlerTask(site, linkUrl)); // Submit new links
-                }
+                invokeAll(subTasks);
             } catch (Exception e) {
                 updateSiteStatus(site, Status.FAILED, e.getMessage());
             }
+            return null;
         }
     }
 
     private int getStatusCode(String url) {
         return webCrawler.getStatusCode(url);
+    }
+
+    @PreDestroy // Annotate this method to be called before the bean is destroyed
+    public void shutdown() {
+        forkJoinPool.shutdown();
     }
 }
