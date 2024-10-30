@@ -11,7 +11,7 @@ public class Site {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Long id; // Change from int to Long
 
     @Enumerated(EnumType.STRING)
     @Column(columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')", nullable = false)
@@ -28,8 +28,4 @@ public class Site {
 
     @Column(columnDefinition = "VARCHAR(255)", nullable = false)
     private String name;
-
-    @ManyToOne
-    @JoinColumn(name = "site_id", nullable = false)
-    private Page page;
 }

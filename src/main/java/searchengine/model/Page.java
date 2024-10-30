@@ -24,4 +24,6 @@ public class Page {
 
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
+
+    // Removed getSiteId method if it's not used
 }
