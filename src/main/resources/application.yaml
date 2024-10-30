@@ -33,8 +33,3 @@ indexing-settings:
       name: "Et Cetera Mobile"
     - url: "https://www.svetlovka.ru"
       name: "Svetlovka"
-
-crawler:
-  userAgent: "HeliontSearchBot"
-  referrer: "http://www.google.com"
-  delay: 2000
