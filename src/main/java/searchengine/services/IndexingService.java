@@ -1,36 +1,36 @@
 package searchengine.services;
 
 import lombok.Getter;
-import org.jsoup.Connection;
 import org.jsoup.nodes.Document;
-import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 import searchengine.model.Page;
 import searchengine.model.Site;
-import searchengine.model.Status; // Убедитесь, что у вас есть этот импорт
+import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.io.IOException;
+import java.io.IOException; // Import for IOException
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.*;
 
 @Service
 public class IndexingService {
 
     @Getter
     private boolean indexingInProgress = false;
-    private final AtomicBoolean stopIndexing = new AtomicBoolean(false); // Флаг остановки индексации
-
-    private final SiteRepository siteRepository; // Репозиторий для таблицы Site
-    private final PageRepository pageRepository; // Репозиторий для таблицы Page
-    private final WebCrawler webCrawler; // Новый экземпляр WebCrawler
+    private final AtomicBoolean stopIndexing = new AtomicBoolean(false);
+    private final SiteRepository siteRepository;
+    private final PageRepository pageRepository;
+    private final WebCrawler webCrawler;
+    private final ExecutorService siteIndexingExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService pageCrawlingExecutor = Executors.newCachedThreadPool(); // New Executor for page crawling
 
     public IndexingService(SiteRepository siteRepository, PageRepository pageRepository) {
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.webCrawler = new WebCrawler(); // Инициализация WebCrawler
+        this.webCrawler = new WebCrawler();
     }
 
     public void startFullIndexing() {
@@ -41,87 +41,100 @@ public class IndexingService {
         indexingInProgress = true;
         stopIndexing.set(false);
 
-        // Используем стандартный поток
-        new Thread(this::performIndexing).start();
+        // Запуск обработки сайтов в отдельных потоках
+        List<Site> sites = siteRepository.findAll();
+        sites.forEach(site -> siteIndexingExecutor.submit(() -> indexSite(site)));
     }
 
-    private void performIndexing() {
-        List<Site> sites = siteRepository.findAll();
-        for (Site site : sites) {
-            if (stopIndexing.get()) {
-                throw new RuntimeException("Индексация остановлена пользователем");
-            }
-
-            // Устанавливаем статус на INDEXING
-            site.setStatus(Status.INDEXING);
-            site.setStatusTime(LocalDateTime.now());
-            siteRepository.save(site);
-
-            // Удаляем предыдущие страницы
-            pageRepository.deleteBySiteId(site.getId());
-
-            try {
-                // Получаем содержимое главной страницы
-                Document doc = webCrawler.fetchPageContent(site.getUrl());
-
-                // Проверяем, получено ли содержимое
-                if (doc != null) {
-                    // Логика обхода страниц и сохранения их в БД
-                    Page page = new Page();
-                    page.setSite(site);
-                    page.setPath(site.getUrl()); // Замените на правильный путь
-
-                    // Получаем код статуса страницы
-                    int statusCode = getStatusCode(site.getUrl());
-                    page.setCode(statusCode); // Устанавливаем полученный код
-                    page.setContent(doc.html()); // Содержимое страницы
-                    pageRepository.save(page);
-
-                    // Здесь добавьте логику для обхода всех найденных ссылок
-                } else {
-                    // Обработка ошибки получения содержимого
-                    handleError(new RuntimeException("Не удалось получить содержимое страницы: " + site.getUrl()));
-                }
-            } catch (Exception e) {
-                // Обработка ошибок, связанных с получением или обработкой
-                handleError(e);
-            }
-
-            // Устанавливаем статус на INDEXED
-            site.setStatus(Status.INDEXED);
-            site.setStatusTime(LocalDateTime.now());
-            siteRepository.save(site);
+    private void indexSite(Site site) {
+        if (stopIndexing.get()) {
+            updateSiteStatus(site, Status.FAILED, "Индексация остановлена пользователем");
+            return;
         }
-        indexingInProgress = false; // Обновляем статус после завершения индексации
+
+        updateSiteStatus(site, Status.INDEXING, null);
+        pageRepository.deleteBySiteId(site.getId());
+
+        try {
+            Document doc = webCrawler.fetchPageContent(site.getUrl());
+            if (doc != null) {
+                // Submit the PageCrawlerTask to the pageCrawlingExecutor
+                pageCrawlingExecutor.submit(new PageCrawlerTask(site, site.getUrl()));
+                updateSiteStatus(site, Status.INDEXED, null);
+            } else {
+                updateSiteStatus(site, Status.FAILED, "Не удалось получить содержимое страницы: " + site.getUrl());
+            }
+        } catch (IOException e) { // Catching IOException
+            updateSiteStatus(site, Status.FAILED, "Ошибка при загрузке страницы: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Restore the interrupted status
+            updateSiteStatus(site, Status.FAILED, "Индексация прервана: " + e.getMessage());
+        } catch (Exception e) {
+            updateSiteStatus(site, Status.FAILED, e.getMessage());
+        }
+    }
+
+    private void updateSiteStatus(Site site, Status status, String lastError) {
+        site.setStatus(status);
+        site.setStatusTime(LocalDateTime.now());
+        if (lastError != null) {
+            site.setLastError(lastError);
+        }
+        siteRepository.save(site);
     }
 
     public void stopIndexing() {
         stopIndexing.set(true);
+        indexingInProgress = false;
+
         List<Site> sites = siteRepository.findAll();
-        for (Site site : sites) {
-            if (!pageRepository.existsBySiteId(site.getId())) { // Проверяем, если страницы еще не были добавлены
-                site.setStatus(Status.FAILED); // Устанавливаем статус в FAILED
-                site.setLastError("Индексация остановлена пользователем"); // Устанавливаем текст ошибки
-                site.setStatusTime(LocalDateTime.now()); // Обновляем время статуса
-                siteRepository.save(site); // Сохраняем изменения в базе данных
+        sites.forEach(site -> {
+            if (!pageRepository.existsBySiteId(site.getId())) {
+                updateSiteStatus(site, Status.FAILED, "Индексация остановлена пользователем");
+            }
+        });
+    }
+
+    private class PageCrawlerTask implements Runnable { // Change to Runnable
+        private final Site site;
+        private final String url;
+
+        public PageCrawlerTask(Site site, String url) {
+            this.site = site;
+            this.url = url;
+        }
+
+        @Override
+        public void run() { // Implement run method
+            if (stopIndexing.get() || pageRepository.existsBySiteAndPath(site, url)) {
+                return;
+            }
+
+            try {
+                Document doc = webCrawler.fetchPageContent(url);
+                int statusCode = getStatusCode(url);
+                Page page = new Page(); // Ensure this matches your Page constructor
+                page.setSite(site);
+                page.setPath(url);
+                page.setCode(statusCode);
+                page.setContent(doc.html());
+                pageRepository.save(page);
+
+                // Create tasks for new links
+                List<String> links = doc.select("a[href]").stream()
+                        .map(link -> link.absUrl("href"))
+                        .distinct()
+                        .toList();
+                for (String linkUrl : links) {
+                    pageCrawlingExecutor.submit(new PageCrawlerTask(site, linkUrl)); // Submit new links
+                }
+            } catch (Exception e) {
+                updateSiteStatus(site, Status.FAILED, e.getMessage());
             }
         }
     }
 
-    private void handleError(Exception e) {
-        stopIndexing();
-        System.out.println("Ошибка индексации: " + e.getMessage());
-    }
-
-    // Метод для получения кода статуса страницы
     private int getStatusCode(String url) {
-        try {
-            Connection.Response response = Jsoup.connect(url)
-                    .method(Connection.Method.HEAD) // Или Connection.Method.GET, если нужно
-                    .execute();
-            return response.statusCode();
-        } catch (IOException e) {
-            return 0; // Или другой код ошибки
-        }
+        return webCrawler.getStatusCode(url);
     }
 }
