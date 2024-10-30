@@ -30,4 +30,19 @@ public class Controller {
         response.put("result", true);
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/api/stopIndexing")
+    public ResponseEntity<Map<String, Object>> stopIndexing() {
+        Map<String, Object> response = new HashMap<>();
+
+        if (!indexingService.isIndexingInProgress()) {
+            response.put("result", false);
+            response.put("error", "Индексация не запущена");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        indexingService.stopIndexing();
+        response.put("result", true);
+        return ResponseEntity.ok(response);
+    }
 }
