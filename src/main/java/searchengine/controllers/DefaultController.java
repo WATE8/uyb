@@ -17,7 +17,6 @@ public class DefaultController {
 
     private final IndexingService indexingService;
 
-    // Запуск полной индексации
     @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
         Map<String, Object> response = new HashMap<>();
@@ -25,15 +24,14 @@ public class DefaultController {
         if (indexingService.isIndexingInProgress()) {
             response.put("result", false);
             response.put("error", "Индексация уже запущена");
-            return ResponseEntity.badRequest().body(response); // Ошибка в формате спецификации
+            return ResponseEntity.badRequest().body(response);
         }
 
         indexingService.startFullIndexing();
         response.put("result", true);
-        return ResponseEntity.ok(response); // Успешный ответ
+        return ResponseEntity.ok(response);
     }
 
-    // Остановка текущей индексации
     @GetMapping("/stopIndexing")
     public ResponseEntity<Map<String, Object>> stopIndexing() {
         Map<String, Object> response = new HashMap<>();
@@ -41,11 +39,11 @@ public class DefaultController {
         if (!indexingService.isIndexingInProgress()) {
             response.put("result", false);
             response.put("error", "Индексация не запущена");
-            return ResponseEntity.badRequest().body(response); // Ошибка в формате спецификации
+            return ResponseEntity.badRequest().body(response);
         }
 
         indexingService.stopIndexing();
         response.put("result", true);
-        return ResponseEntity.ok(response); // Успешный ответ
+        return ResponseEntity.ok(response);
     }
 }
