@@ -21,6 +21,7 @@
         <russian.version>1.5</russian.version>
         <lucene-analyzers-common.version>8.11.2</lucene-analyzers-common.version>
         <jakarta.validation-api.version>3.0.0</jakarta.validation-api.version>
+        <hibernate-validator.version>6.2.0.Final</hibernate-validator.version>
     </properties>
 
     <parent>
@@ -54,12 +55,12 @@
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
-            <version>${jsoup.version}</version> <!-- Убедитесь, что используете актуальную версию -->
+            <version>${jsoup.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version> <!-- Указание версии Lombok -->
+            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -73,21 +74,24 @@
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-analyzers-common</artifactId>
-            <version>${lucene-analyzers-common.version}</version> <!-- Проверьте последнюю версию -->
+            <version>${lucene-analyzers-common.version}</version>
         </dependency>
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>${mysql-connector-java.version}</version> <!-- Указание версии MySQL Connector -->
+            <version>${mysql-connector-java.version}</version>
             <scope>runtime</scope>
         </dependency>
-
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
-            <version>${jakarta.validation-api.version}</version> <!-- Check for the latest version -->
+            <version>${jakarta.validation-api.version}</version>
         </dependency>
-
+        <dependency>
+            <groupId>org.hibernate.validator</groupId>
+            <artifactId>hibernate-validator</artifactId>
+            <version>${hibernate-validator.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.apache.lucene.morphology</groupId>
             <artifactId>morph</artifactId>
@@ -120,7 +124,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.10.1</version> <!-- Maven Compiler Plugin для JDK 21 -->
+                <version>3.10.1</version>
                 <configuration>
                     <source>21</source>
                     <target>21</target>
