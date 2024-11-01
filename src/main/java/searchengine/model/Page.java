@@ -13,7 +13,7 @@ public class Page {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Integer id; // Изменено на Integer
 
     @ManyToOne
     @JoinColumn(name = "site_id", nullable = false)
@@ -31,6 +31,7 @@ public class Page {
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
 
+    // Constructor for creating a new Page instance
     public Page(Site site, String path, int code, String content) {
         this.site = site;
         this.path = path;
