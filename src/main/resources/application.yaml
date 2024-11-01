@@ -17,7 +17,7 @@ spring:
 
 indexing-settings:
   sites:
-    - url: "http://www.playback.ru"
-      name: "Playback"
     - url: "https://dimonvideo.ru"
       name: "DimonVideo"
+    - url: "https://www.svetlovka.ru"
+      name: "Svetlovka"

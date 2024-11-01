@@ -11,8 +11,10 @@ import searchengine.repositories.SiteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.Status;
+import java.time.LocalDateTime;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Controller
@@ -25,10 +27,6 @@ public class DefaultController {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
 
-    public void saveSite(Site site) {
-        siteRepository.save(site);
-    }
-
     @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
         Map<String, Object> response = new HashMap<>();
@@ -40,18 +38,26 @@ public class DefaultController {
         }
 
         try {
-            // Пример: добавление сайта перед индексацией
-            Site newSite = new Site();
-            newSite.setUrl("http://www.playback.ru");
-            newSite.setName("Playback");
-            newSite.updateStatus(Status.INDEXING); // Установка статуса индексации
-            saveSite(newSite);
-            logger.info("Site added: {}", newSite.getUrl());
+            // Получаем список сайтов из базы данных
+            List<Site> sites = siteRepository.findAll();
+            if (sites.isEmpty()) {
+                response.put("result", false);
+                response.put("error", "Нет сайтов для индексации");
+                return ResponseEntity.badRequest().body(response);
+            }
+
+            // Обновляем статус каждого сайта и запускаем индексацию
+            for (Site site : sites) {
+                site.setStatus(Status.INDEXING);
+                site.setStatusTime(LocalDateTime.now());
+                siteRepository.save(site);
+                logger.info("Старт индексации сайта: {}", site.getUrl());
+            }
 
             indexingService.startFullIndexing();
             response.put("result", true);
         } catch (Exception e) {
-            logger.error("Error during indexing process: {}", e.getMessage());
+            logger.error("Ошибка во время процесса индексации: {}", e.getMessage());
             response.put("result", false);
             response.put("error", "Ошибка при запуске индексации");
             return ResponseEntity.internalServerError().body(response);
@@ -72,10 +78,10 @@ public class DefaultController {
 
         try {
             indexingService.stopIndexing();
-            logger.info("Indexing stopped");
+            logger.info("Индексация остановлена");
             response.put("result", true);
         } catch (Exception e) {
-            logger.error("Error stopping indexing: {}", e.getMessage());
+            logger.error("Ошибка при остановке индексации: {}", e.getMessage());
             response.put("result", false);
             response.put("error", "Ошибка при остановке индексации");
             return ResponseEntity.internalServerError().body(response);

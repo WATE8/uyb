@@ -22,11 +22,11 @@ public class WebCrawler {
     private String userAgent = "Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6";
     private String referrer = "http://www.google.com";
 
-    public Document fetchPageContent(String url) {
-        try {
-            // Случайная задержка для имитации человеческого поведения
-            Thread.sleep(MIN_DELAY + (int) (Math.random() * (MAX_DELAY - MIN_DELAY)));
+    public Document fetchPageContent(String url) throws IOException, InterruptedException {
+        // Случайная задержка для имитации человеческого поведения
+        Thread.sleep(MIN_DELAY + (int) (Math.random() * (MAX_DELAY - MIN_DELAY)));
 
+        try {
             return Jsoup.connect(url)
                     .userAgent(userAgent) // Использует поле user agent
                     .referrer(referrer) // Использует поле referrer
@@ -34,11 +34,7 @@ public class WebCrawler {
                     .get();
         } catch (IOException e) {
             logger.error("Ошибка при получении содержимого страницы {}: {}", url, e.getMessage());
-            return null; // Возвращает null при ошибке
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt(); // Восстанавливает статус прерывания
-            logger.error("Индексация была прервана: {}", e.getMessage());
-            return null; // Возвращает null при прерывании
+            throw e; // Пробрасываем исключение для обработки выше
         }
     }
 
