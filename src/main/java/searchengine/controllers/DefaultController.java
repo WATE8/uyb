@@ -10,6 +10,7 @@ import searchengine.model.Site;
 import searchengine.repositories.SiteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import searchengine.model.Status;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,7 +25,7 @@ public class DefaultController {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
 
-    public void addSite(Site site) {
+    public void saveSite(Site site) {
         siteRepository.save(site);
     }
 
@@ -38,15 +39,24 @@ public class DefaultController {
             return ResponseEntity.badRequest().body(response);
         }
 
-        // Example: Add site before indexing
-        Site newSite = new Site();
-        newSite.setUrl("http://www.playback.ru");
-        newSite.setName("Playback");
-        addSite(newSite);
-        logger.info("Site added: {}", newSite.getUrl());
+        try {
+            // Пример: добавление сайта перед индексацией
+            Site newSite = new Site();
+            newSite.setUrl("http://www.playback.ru");
+            newSite.setName("Playback");
+            newSite.updateStatus(Status.INDEXING); // Установка статуса индексации
+            saveSite(newSite);
+            logger.info("Site added: {}", newSite.getUrl());
 
-        indexingService.startFullIndexing();
-        response.put("result", true);
+            indexingService.startFullIndexing();
+            response.put("result", true);
+        } catch (Exception e) {
+            logger.error("Error during indexing process: {}", e.getMessage());
+            response.put("result", false);
+            response.put("error", "Ошибка при запуске индексации");
+            return ResponseEntity.internalServerError().body(response);
+        }
+
         return ResponseEntity.ok(response);
     }
 
@@ -60,9 +70,17 @@ public class DefaultController {
             return ResponseEntity.badRequest().body(response);
         }
 
-        indexingService.stopIndexing();
-        logger.info("Indexing stopped");
-        response.put("result", true);
+        try {
+            indexingService.stopIndexing();
+            logger.info("Indexing stopped");
+            response.put("result", true);
+        } catch (Exception e) {
+            logger.error("Error stopping indexing: {}", e.getMessage());
+            response.put("result", false);
+            response.put("error", "Ошибка при остановке индексации");
+            return ResponseEntity.internalServerError().body(response);
+        }
+
         return ResponseEntity.ok(response);
     }
 }

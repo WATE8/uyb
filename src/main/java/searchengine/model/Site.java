@@ -12,10 +12,10 @@ public class Site {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id; // Изменено на Integer
+    private Integer id;
 
     @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')", nullable = false)
+    @Column(nullable = false)
     private Status status;
 
     @NotNull
@@ -26,10 +26,16 @@ public class Site {
     private String lastError;
 
     @NotNull
-    @Column(columnDefinition = "VARCHAR(255)", nullable = false)
+    @Column(nullable = false)
     private String url;
 
     @NotNull
-    @Column(columnDefinition = "VARCHAR(255)", nullable = false)
+    @Column(nullable = false)
     private String name;
+
+    // Метод для обновления статуса
+    public void updateStatus(Status newStatus) {
+        this.status = newStatus;
+        this.statusTime = LocalDateTime.now(); // Обновление времени статуса
+    }
 }
