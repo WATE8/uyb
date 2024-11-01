@@ -6,6 +6,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
 import searchengine.services.IndexingService;
+import searchengine.model.Site;
+import searchengine.repositories.SiteRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +20,13 @@ import java.util.Map;
 public class DefaultController {
 
     private final IndexingService indexingService;
+    private final SiteRepository siteRepository;
+
+    private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
+
+    public void addSite(Site site) {
+        siteRepository.save(site);
+    }
 
     @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
@@ -26,6 +37,13 @@ public class DefaultController {
             response.put("error", "Индексация уже запущена");
             return ResponseEntity.badRequest().body(response);
         }
+
+        // Example: Add site before indexing
+        Site newSite = new Site();
+        newSite.setUrl("http://www.playback.ru");
+        newSite.setName("Playback");
+        addSite(newSite);
+        logger.info("Site added: {}", newSite.getUrl());
 
         indexingService.startFullIndexing();
         response.put("result", true);
@@ -43,6 +61,7 @@ public class DefaultController {
         }
 
         indexingService.stopIndexing();
+        logger.info("Indexing stopped");
         response.put("result", true);
         return ResponseEntity.ok(response);
     }

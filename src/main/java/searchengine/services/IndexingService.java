@@ -3,7 +3,7 @@ package searchengine.services;
 import lombok.Getter;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
-import jakarta.annotation.PreDestroy; // Import for the @PreDestroy annotation
+import jakarta.annotation.PreDestroy; // Import for @PreDestroy annotation
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -25,7 +25,7 @@ public class IndexingService {
     private final PageRepository pageRepository;
     private final WebCrawler webCrawler;
     private final ExecutorService siteIndexingExecutor = Executors.newCachedThreadPool();
-    private final ForkJoinPool forkJoinPool = new ForkJoinPool(); // Create once at the class level
+    private final ForkJoinPool forkJoinPool = new ForkJoinPool(); // Create ForkJoinPool once
 
     public IndexingService(SiteRepository siteRepository, PageRepository pageRepository) {
         this.siteRepository = siteRepository;
@@ -41,7 +41,6 @@ public class IndexingService {
         indexingInProgress = true;
         stopIndexing.set(false);
 
-        // Запуск обработки сайтов в отдельных потоках
         List<Site> sites = siteRepository.findAll();
         sites.forEach(site -> siteIndexingExecutor.submit(() -> indexSite(site)));
     }
@@ -53,14 +52,17 @@ public class IndexingService {
         }
 
         updateSiteStatus(site, Status.INDEXING, null);
-        pageRepository.deleteBySiteId(site.getId());
-
-        Document doc;
+        pageRepository.deleteBySiteId(site.getId()); // Remove existing pages
 
         try {
-            doc = webCrawler.fetchPageContent(site.getUrl());
-
+            Document doc = webCrawler.fetchPageContent(site.getUrl());
             if (doc != null) {
+                // Update site status and time
+                site.setStatus(Status.INDEXED);
+                site.setStatusTime(LocalDateTime.now());
+                siteRepository.save(site);
+
+                // Start page indexing
                 forkJoinPool.invoke(new PageCrawlerTask(site, site.getUrl()));
                 updateSiteStatus(site, Status.INDEXED, null);
             } else {
@@ -104,22 +106,22 @@ public class IndexingService {
         @Override
         protected Void compute() {
             if (stopIndexing.get() || pageRepository.existsBySiteAndPath(site, url)) {
-                return null;
+                return null; // Exit if indexing is stopped or page already exists
             }
 
             try {
                 Document doc = webCrawler.fetchPageContent(url);
                 int statusCode = getStatusCode(url);
                 Page page = new Page(site, url, statusCode, doc.html());
-                pageRepository.save(page);
+                pageRepository.save(page); // Save page
 
-                // Создание задач для новых ссылок
+                // Create tasks for new links
                 List<PageCrawlerTask> subTasks = doc.select("a[href]").stream()
                         .map(link -> link.absUrl("href"))
                         .distinct()
                         .map(linkUrl -> new PageCrawlerTask(site, linkUrl))
                         .toList();
-                invokeAll(subTasks);
+                invokeAll(subTasks); // Recursively index new pages
             } catch (Exception e) {
                 updateSiteStatus(site, Status.FAILED, e.getMessage());
             }
@@ -128,11 +130,12 @@ public class IndexingService {
     }
 
     private int getStatusCode(String url) {
-        return webCrawler.getStatusCode(url);
+        return webCrawler.getStatusCode(url); // Get page status code
     }
 
-    @PreDestroy // Annotate this method to be called before the bean is destroyed
+    @PreDestroy // Annotation to run method before bean destruction
     public void shutdown() {
-        forkJoinPool.shutdown();
+        siteIndexingExecutor.shutdownNow(); // Shutdown all indexing threads
+        forkJoinPool.shutdown(); // Shutdown ForkJoinPool
     }
 }

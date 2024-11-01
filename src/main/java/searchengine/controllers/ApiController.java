@@ -19,6 +19,12 @@ public class ApiController {
 
     @GetMapping("/statistics")
     public ResponseEntity<StatisticsResponse> statistics() {
-        return ResponseEntity.ok(statisticsService.getStatistics());
+        try {
+            StatisticsResponse response = statisticsService.getStatistics();
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            // Log the exception (you could use a logging framework like SLF4J)
+            return ResponseEntity.internalServerError().build(); // 500 error
+        }
     }
 }
