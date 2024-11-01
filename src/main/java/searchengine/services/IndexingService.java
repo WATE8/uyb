@@ -1,6 +1,7 @@
 package searchengine.services;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PreDestroy;
@@ -9,6 +10,7 @@ import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+import searchengine.config.SitesList;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.LocalDateTime;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.*;
 
 @Service
+@RequiredArgsConstructor
 public class IndexingService {
 
     @Getter
@@ -23,15 +26,10 @@ public class IndexingService {
     private final AtomicBoolean stopIndexing = new AtomicBoolean(false);
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final SitesList sitesList; // Injecting SitesList
     private final WebCrawler webCrawler;
     private final ExecutorService siteIndexingExecutor = Executors.newCachedThreadPool();
     private final ForkJoinPool forkJoinPool = new ForkJoinPool();
-
-    public IndexingService(SiteRepository siteRepository, PageRepository pageRepository) {
-        this.siteRepository = siteRepository;
-        this.pageRepository = pageRepository;
-        this.webCrawler = new WebCrawler();
-    }
 
     public void startFullIndexing() {
         if (indexingInProgress) {
@@ -41,8 +39,15 @@ public class IndexingService {
         indexingInProgress = true;
         stopIndexing.set(false);
 
-        List<Site> sites = siteRepository.findAll();
-        sites.forEach(site -> siteIndexingExecutor.submit(() -> indexSite(site)));
+        // Получаем список сайтов из конфигурации и сохраняем в базе данных
+        sitesList.getSites().forEach(siteConfig -> {
+            Site site = new Site();
+            site.setUrl(siteConfig.getUrl());
+            site.setName(siteConfig.getName());
+            site.setStatus(Status.INDEXING);
+            siteRepository.save(site);
+            siteIndexingExecutor.submit(() -> indexSite(site));
+        });
     }
 
     private void indexSite(Site site) {
@@ -52,7 +57,7 @@ public class IndexingService {
         }
 
         updateSiteStatus(site, Status.INDEXING, null);
-        pageRepository.deleteBySiteId(site.getId());
+        pageRepository.deleteBySiteId(site.getId()); // Удаляем старые записи перед индексацией
 
         try {
             Document doc = webCrawler.fetchPageContent(site.getUrl());
@@ -61,6 +66,7 @@ public class IndexingService {
                 site.setStatusTime(LocalDateTime.now());
                 siteRepository.save(site);
 
+                // Запускаем рекурсивный обход страниц, начиная с главной
                 forkJoinPool.invoke(new PageCrawlerTask(site, site.getUrl()));
             } else {
                 updateSiteStatus(site, Status.FAILED, "Не удалось получить содержимое страницы: " + site.getUrl());
@@ -109,15 +115,21 @@ public class IndexingService {
             try {
                 Document doc = webCrawler.fetchPageContent(url);
                 int statusCode = getStatusCode(url);
-                Page page = new Page(site, url, statusCode, doc.html());
-                pageRepository.save(page);
 
+                // Сохраняем страницу в базу данных, если она не существует
+                if (!pageRepository.existsBySiteAndPath(site, url)) {
+                    Page page = new Page(site, url, statusCode, doc.html());
+                    pageRepository.save(page);
+                }
+
+                // Собираем ссылки на страницы для дальнейшего обхода
                 List<PageCrawlerTask> subTasks = doc.select("a[href]").stream()
-                        .map(link -> link.absUrl("href"))
+                        .map(link -> link.absUrl("href")) // Получаем абсолютные URL
+                        .filter(linkUrl -> linkUrl.startsWith(site.getUrl())) // Фильтруем по домену
                         .distinct()
                         .map(linkUrl -> new PageCrawlerTask(site, linkUrl))
                         .toList();
-                invokeAll(subTasks);
+                invokeAll(subTasks); // Запускаем все подзадачи рекурсивно
             } catch (Exception e) {
                 updateSiteStatus(site, Status.FAILED, e.getMessage());
             }

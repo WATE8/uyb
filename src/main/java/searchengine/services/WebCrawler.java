@@ -6,10 +6,12 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-@Setter // Enable Lombok's setter methods for the class fields
+@Setter // Включает методы сеттера Lombok для полей класса
+@Component // Регистрирует класс как Spring компонент
 public class WebCrawler {
 
     private static final int MIN_DELAY = 500;
@@ -20,13 +22,13 @@ public class WebCrawler {
     private String referrer = "http://www.google.com";
 
     public Document fetchPageContent(String url) throws IOException, InterruptedException {
-        // Random delay to mimic human browsing
+        // Случайная задержка для имитации человеческого поведения
         Thread.sleep(MIN_DELAY + (int) (Math.random() * (MAX_DELAY - MIN_DELAY)));
 
         return Jsoup.connect(url)
-                .userAgent(userAgent) // Use the user agent field
-                .referrer(referrer) // Use the referrer field
-                .timeout(10000) // Set timeout to 10 seconds
+                .userAgent(userAgent) // Использует поле user agent
+                .referrer(referrer) // Использует поле referrer
+                .timeout(10000) // Устанавливает тайм-аут на 10 секунд
                 .get();
     }
 
@@ -36,7 +38,7 @@ public class WebCrawler {
             return response.statusCode();
         } catch (IOException e) {
             logger.error("Error fetching status code for URL: {} - {}", url, e.getMessage());
-            return -1; // Return -1 to indicate an error
+            return -1; // Возвращает -1, чтобы указать на ошибку
         }
     }
 }
