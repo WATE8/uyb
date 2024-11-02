@@ -6,11 +6,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import searchengine.config.Site;
+import searchengine.config.Site;  // Убедитесь, что этот импорт правильный
 import searchengine.config.SitesList;
+import searchengine.model.Page;
+import searchengine.model.SiteBaza;
+import searchengine.model.Status;
+import searchengine.repository.PageRepository; // Импорт репозитория Page
+import searchengine.repository.SiteRepository; // Импорт репозитория Site
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -20,9 +25,14 @@ public class IndexingService {
     private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
     private final SitesList sitesList;
 
+    private final SiteRepository siteRepository; // Добавление репозитория Site
+    private final PageRepository pageRepository; // Добавление репозитория Page
+
     @Autowired
-    public IndexingService(SitesList sitesList) {
+    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
         this.sitesList = sitesList;
+        this.siteRepository = siteRepository;
+        this.pageRepository = pageRepository;
     }
 
     public boolean isIndexingInProgress() {
@@ -45,14 +55,27 @@ public class IndexingService {
         long startTime = System.currentTimeMillis(); // Start time measurement
         for (Site site : sitesList.getSites()) {
             long siteStartTime = System.currentTimeMillis(); // Start time for each site
+            SiteBaza siteEntity = new SiteBaza(); // Создание экземпляра SiteBaza
             try {
+                // Сохраняем информацию о сайте в базе данных
+                siteEntity.setUrl(site.getUrl());
+                siteEntity.setName(site.getName());
+                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatusTime(LocalDateTime.now());
+                siteRepository.save(siteEntity); // Сохраняем сайт
+
                 Document document = Jsoup.connect(site.getUrl()).get();
                 String title = document.title();
                 String body = document.body().text();
-                indexContent(site.getUrl(), title, body);
+
+                // Индексируем контент страницы
+                indexContent(siteEntity, title, body);
             } catch (IOException e) {
                 logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
-                // Возможно, стоит добавить логику повторной попытки или сохранить состояние для дальнейшей обработки
+                // Обновляем статус сайта на FAILED в случае ошибки
+                siteEntity.setStatus(Status.FAILED);
+                siteEntity.setLastError(e.getMessage());
+                siteRepository.save(siteEntity); // Обновляем информацию о сайте
             } finally {
                 long siteDuration = System.currentTimeMillis() - siteStartTime; // Calculate site duration
                 logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
@@ -62,9 +85,18 @@ public class IndexingService {
         logger.info("Индексация завершена за {} мс.", totalDuration);
     }
 
-    private void indexContent(String url, String title, String body) {
+    private void indexContent(SiteBaza site, String title, String body) {
+        // Сохраняем информацию о странице в базе данных
+        Page page = new Page();
+        page.setSiteId(site.getId());
+        page.setPath("/"); // Здесь установите правильный путь
+        page.setCode(200); // Установите код ответа, например, 200
+        page.setContent(body); // Содержимое страницы
+
+        pageRepository.save(page); // Сохраняем страницу в базе данных
+
         // Реализуйте вашу логику индексации с использованием Apache Lucene
-        logger.info("Индексация сайта: {}", url);
+        logger.info("Индексация сайта: {}", site.getUrl());
         logger.info("Заголовок: {}", title);
         logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "...");
     }
