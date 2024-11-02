@@ -7,15 +7,10 @@ import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
 import searchengine.services.IndexingService;
 import searchengine.repositories.SiteRepository;
-import searchengine.repositories.PageRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import searchengine.model.Status;
-import searchengine.config.SitesList;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Controller
@@ -25,10 +20,9 @@ public class DefaultController {
 
     private final IndexingService indexingService;
     private final SiteRepository siteRepository;
-    private final PageRepository pageRepository;
-    private final SitesList sitesList;
+    // Удалены неиспользуемые pageRepository и sitesList
 
-    private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DefaultController.class);
 
     @PostMapping("/addSite")
     @Transactional
@@ -39,10 +33,15 @@ public class DefaultController {
             return createErrorResponse("Сайт уже существует", responseMap);
         }
 
-        searchengine.model.Site modelSite = createModelSite(newSite);
-        siteRepository.save(modelSite);
-
-        return createSuccessResponse(responseMap, "Сайт успешно добавлен: " + modelSite.getUrl());
+        try {
+            searchengine.model.Site modelSite = createModelSite(newSite);
+            siteRepository.save(modelSite);
+            logger.info("Сайт успешно добавлен: {}", modelSite.getUrl());
+            return createSuccessResponse(responseMap, "Сайт успешно добавлен: " + modelSite.getUrl());
+        } catch (Exception e) {
+            logger.error("Ошибка при добавлении сайта: {}", e.getMessage(), e);
+            return createErrorResponse("Ошибка при добавлении сайта: " + e.getMessage(), responseMap);
+        }
     }
 
     @GetMapping("/startIndexing")
@@ -54,17 +53,6 @@ public class DefaultController {
             if (indexingService.isIndexingInProgress()) {
                 return createErrorResponse("Индексация уже запущена", responseMap);
             }
-
-            List<searchengine.config.Site> configSites = sitesList.getSites();
-            logger.info("Найденные сайты для индексации: {}", configSites.size());
-
-            configSites.forEach(configSite ->
-                    siteRepository.findByUrl(configSite.getUrl()).ifPresent(existingSite -> {
-                        pageRepository.deleteBySiteId(existingSite.getId());
-                        siteRepository.delete(existingSite);
-                        logger.info("Удалены старые данные для сайта: {}", existingSite.getUrl());
-                    })
-            );
 
             indexingService.startFullIndexing();
             return createSuccessResponse(responseMap, "Индексация начата успешно");
@@ -84,28 +72,23 @@ public class DefaultController {
         }
 
         indexingService.stopIndexing();
+        logger.info("Индексация остановлена пользователем.");
         return createSuccessResponse(responseMap, "Индексация остановлена успешно");
     }
 
     private searchengine.model.Site createModelSite(searchengine.config.Site newSite) {
-        searchengine.model.Site site = new searchengine.model.Site();
-        site.setUrl(newSite.getUrl());
-        site.setName(newSite.getName());
-        site.setStatus(Status.INDEXING);
-        site.setStatusTime(LocalDateTime.now());
-        return site;
-    }
-
-    private ResponseEntity<Map<String, Object>> createErrorResponse(String message, Map<String, Object> responseMap) {
-        responseMap.put("result", false);
-        responseMap.put("error", message);
-        return ResponseEntity.badRequest().body(responseMap);
+        return new searchengine.model.Site(newSite.getUrl(), newSite.getName(), Status.INDEXING, LocalDateTime.now());
     }
 
     private ResponseEntity<Map<String, Object>> createSuccessResponse(Map<String, Object> responseMap, String message) {
-        responseMap.put("result", true);
+        responseMap.put("status", "success");
         responseMap.put("message", message);
-        logger.info(message);
         return ResponseEntity.ok(responseMap);
+    }
+
+    private ResponseEntity<Map<String, Object>> createErrorResponse(String message, Map<String, Object> responseMap) {
+        responseMap.put("status", "error");
+        responseMap.put("message", message);
+        return ResponseEntity.badRequest().body(responseMap);
     }
 }
