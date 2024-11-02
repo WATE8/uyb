@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RecursiveTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -33,6 +35,7 @@ public class IndexingService {
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final Set<String> indexedUrls = new HashSet<>();
+    private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
     @Autowired
     public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
@@ -63,74 +66,102 @@ public class IndexingService {
     private void performIndexing(int depth) {
         long startTime = System.currentTimeMillis();
         for (Site site : sitesList.getSites()) {
-            long siteStartTime = System.currentTimeMillis();
-            SiteBaza siteEntity = new SiteBaza();
-            try {
-                // Создаем новую запись в Site с статусом INDEXING
+            // Запускаем обход сайта в отдельном потоке
+            forkJoinPool.execute(() -> {
+                long siteStartTime = System.currentTimeMillis();
+                SiteBaza siteEntity = new SiteBaza();
                 siteEntity.setUrl(site.getUrl());
                 siteEntity.setName(site.getName());
                 siteEntity.setStatus(Status.INDEXING);  // Устанавливаем статус INDEXING
                 siteEntity.setStatusTime(LocalDateTime.now());
-                siteRepository.save(siteEntity);
+                siteRepository.save(siteEntity); // Сохраняем начальный статус
 
-                // Запуск индексации страницы с учетом глубины
-                indexPageAndLinks(siteEntity, site.getUrl(), 0, depth);
+                try {
+                    // Запуск индексации страницы с учетом глубины
+                    forkJoinPool.invoke(new PageIndexer(siteEntity, site.getUrl(), 0, depth));
 
-                // Обновляем статус на INDEXED после завершения индексации
-                siteEntity.setStatus(Status.INDEXED);
-                siteRepository.save(siteEntity);
-            } catch (IOException e) {
-                // Обработка ошибок и обновление статуса на FAILED
-                logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
-                siteEntity.setStatus(Status.FAILED);
-                siteEntity.setLastError(e.getMessage());
-                siteRepository.save(siteEntity);
-            } finally {
-                long siteDuration = System.currentTimeMillis() - siteStartTime;
-                logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
-            }
+                    // Обновляем статус на INDEXED после завершения индексации
+                    siteEntity.setStatus(Status.INDEXED);
+                } catch (Exception e) {
+                    // Обработка ошибок и обновление статуса на FAILED
+                    logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
+                    siteEntity.setStatus(Status.FAILED);
+                    siteEntity.setLastError("Ошибка индексации: " + e.getMessage());
+                } finally {
+                    siteRepository.save(siteEntity); // Обновление записи сайта в любом случае
+                    long siteDuration = System.currentTimeMillis() - siteStartTime;
+                    logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
+                }
+            });
         }
         long totalDuration = System.currentTimeMillis() - startTime;
         logger.info("Индексация завершена за {} мс.", totalDuration);
     }
 
-    private void indexPageAndLinks(SiteBaza site, String url, int depth, int maxDepth) throws IOException {
-        if (depth >= maxDepth || indexedUrls.contains(url)) {
-            return; // Выход, если достигнута максимальная глубина или URL уже проиндексирован
+    private class PageIndexer extends RecursiveTask<Void> {
+        private final SiteBaza site;
+        private final String url;
+        private final int depth;
+        private final int maxDepth;
+
+        public PageIndexer(SiteBaza site, String url, int depth, int maxDepth) {
+            this.site = site;
+            this.url = url;
+            this.depth = depth;
+            this.maxDepth = maxDepth;
         }
 
-        indexedUrls.add(url);
-
-        try {
-            Connection.Response response = Jsoup.connect(url)
-                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-                    .execute();
-
-            String contentType = response.contentType();
-            if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
-                logger.warn("Некорректный тип контента для URL: {}", url);
-                return;
+        @Override
+        protected Void compute() {
+            if (depth >= maxDepth || indexedUrls.contains(url)) {
+                return null; // Выход, если достигнута максимальная глубина или URL уже проиндексирован
             }
 
-            Document document = response.parse();
-            String title = document.title();
-            String body = document.body().text();
+            // Проверка, был ли уже проиндексирован данный URL
+            if (pageRepository.findByPath(url) != null) {
+                logger.info("URL уже проиндексирован: {}", url);
+                return null; // Выход, если URL уже проиндексирован
+            }
 
-            // Индексация содержимого страницы с установкой статуса
-            indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
+            indexedUrls.add(url);
 
-            // Извлечение ссылок и рекурсивный обход
-            Elements links = document.select("a[href]");
-            for (Element link : links) {
-                String absUrl = link.absUrl("href");
-                if (isValidUrl(absUrl, site.getUrl())) {
-                    indexPageAndLinks(site, absUrl, depth + 1, maxDepth); // Рекурсивно индексируем
+            try {
+                // Обновляем время статуса перед началом обработки страницы
+                site.setStatusTime(LocalDateTime.now());
+                siteRepository.save(site); // Обновляем статус времени
+
+                Connection.Response response = Jsoup.connect(url)
+                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                        .execute();
+
+                String contentType = response.contentType();
+                if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
+                    logger.warn("Некорректный тип контента для URL: {}", url);
+                    return null;
                 }
+
+                Document document = response.parse();
+                String title = document.title();
+                String body = document.body().text();
+
+                // Индексация содержимого страницы с установкой статуса
+                indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
+
+                // Извлечение ссылок и создание новых задач для каждой ссылки
+                Elements links = document.select("a[href]");
+                for (Element link : links) {
+                    String absUrl = link.absUrl("href");
+                    if (isValidUrl(absUrl, site.getUrl())) {
+                        // Создаем новую задачу для каждой ссылки
+                        PageIndexer subTask = new PageIndexer(site, absUrl, depth + 1, maxDepth);
+                        subTask.fork(); // Запускаем задачу
+                    }
+                }
+            } catch (IOException e) {
+                logger.error("Ошибка при извлечении контента с URL: {}", url, e);
+                indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
             }
-        } catch (IOException e) {
-            logger.error("Ошибка при извлечении контента с URL: {}", url, e);
-            // Дополнительно можно сохранить страницу с ошибкой, если это необходимо
-            indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
+            return null;
         }
     }
 
