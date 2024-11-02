@@ -17,28 +17,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.LocalDateTime;
-import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 @RequiredArgsConstructor
 public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
-
-    private static final int MIN_DELAY = 500; // Минимальная задержка
-    private static final int MAX_DELAY = 5000; // Максимальная задержка
     private static final int TIMEOUT = 10000; // Таймаут
     private static final int ERROR_STATUS_CODE = -1; // Код ошибки
+
     @Getter
     private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
     private final AtomicBoolean stopIndexing = new AtomicBoolean(false);
+
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final SitesList sitesList;
+
     private final ExecutorService siteIndexingExecutor = Executors.newCachedThreadPool();
-    private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
     @Value("${crawler.user-agent:Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6}")
     private String userAgent;
@@ -93,27 +93,25 @@ public class IndexingService {
 
         try {
             Document doc = fetchPageContent(site.getUrl());
-            savePage(site, site.getUrl(), doc); // savePage will handle any issues related to the Document
+            savePage(site, doc);
             updateSiteStatus(site, Status.INDEXED, null);
             logger.info("Индексация сайта завершена успешно: {}", site.getUrl());
         } catch (IOException | InterruptedException e) {
-            String errorMessage = "Ошибка индексации сайта " + site.getUrl() + ": " + e.getMessage();
-            updateSiteStatus(site, Status.FAILED, errorMessage);
-            logger.error(errorMessage, e);
+            handleIndexingError(site, e);
         }
     }
 
     private Document fetchPageContent(String url) throws IOException, InterruptedException {
-        applyRandomDelay();
+        Thread.sleep(10000); // Задержка на 10 секунд
         return Jsoup.connect(url)
                 .userAgent(userAgent)
                 .referrer(referrer)
                 .timeout(TIMEOUT)
-                .get(); // If an IOException occurs, the method will not return a Document
+                .get();
     }
 
-
-    private void savePage(Site site, String url, Document doc) {
+    private void savePage(Site site, Document doc) {
+        String url = site.getUrl();
         int statusCode = getStatusCode(url);
         if (!pageRepository.existsBySiteAndPath(site, url)) {
             Page page = new Page(site, url, statusCode, doc.html());
@@ -135,10 +133,6 @@ public class IndexingService {
         }
     }
 
-    private void applyRandomDelay() throws InterruptedException {
-        Thread.sleep(MIN_DELAY + (int) (Math.random() * (MAX_DELAY - MIN_DELAY)));
-    }
-
     private void updateSiteStatus(Site site, Status status, String lastError) {
         site.setStatus(status);
         if (lastError != null) {
@@ -151,16 +145,19 @@ public class IndexingService {
 
     public void stopIndexing() {
         stopIndexing.set(true);
-        indexingInProgress.set(false);
         logger.info("Запрос на остановку индексации поступил.");
-
         siteIndexingExecutor.shutdownNow();
-        forkJoinPool.shutdownNow();
 
         siteRepository.findAll().forEach(site -> {
             if (!pageRepository.existsBySiteId(site.getId())) {
                 updateSiteStatus(site, Status.FAILED, "Индексация остановлена пользователем");
             }
         });
+    }
+
+    private void handleIndexingError(Site site, Exception e) {
+        String errorMessage = "Ошибка индексации сайта " + site.getUrl() + ": " + e.getMessage();
+        updateSiteStatus(site, Status.FAILED, errorMessage);
+        logger.error(errorMessage, e);
     }
 }

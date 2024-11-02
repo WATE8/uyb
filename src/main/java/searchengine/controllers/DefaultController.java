@@ -42,10 +42,7 @@ public class DefaultController {
         searchengine.model.Site modelSite = createModelSite(newSite);
         siteRepository.save(modelSite);
 
-        responseMap.put("result", true);
-        responseMap.put("message", "Сайт успешно добавлен: " + modelSite.getUrl());
-        logger.info("Добавлен новый сайт: {}", modelSite.getUrl());
-        return ResponseEntity.ok(responseMap);
+        return createSuccessResponse(responseMap, "Сайт успешно добавлен: " + modelSite.getUrl());
     }
 
     @GetMapping("/startIndexing")
@@ -61,25 +58,21 @@ public class DefaultController {
             List<searchengine.config.Site> configSites = sitesList.getSites();
             logger.info("Найденные сайты для индексации: {}", configSites.size());
 
-            for (searchengine.config.Site configSite : configSites) {
-                siteRepository.findByUrl(configSite.getUrl()).ifPresent(existingSite -> {
-                    pageRepository.deleteBySiteId(existingSite.getId());
-                    siteRepository.delete(existingSite);
-                    logger.info("Удалены старые данные для сайта: {}", existingSite.getUrl());
-                });
-            }
+            configSites.forEach(configSite ->
+                    siteRepository.findByUrl(configSite.getUrl()).ifPresent(existingSite -> {
+                        pageRepository.deleteBySiteId(existingSite.getId());
+                        siteRepository.delete(existingSite);
+                        logger.info("Удалены старые данные для сайта: {}", existingSite.getUrl());
+                    })
+            );
 
             indexingService.startFullIndexing();
-            responseMap.put("result", true);
-            responseMap.put("message", "Индексация начата успешно");
-            logger.info("Индексация начата для сайтов: {}", configSites);
+            return createSuccessResponse(responseMap, "Индексация начата успешно");
 
         } catch (Exception e) {
-            logger.error("Ошибка во время запуска индексации: {}", e.getMessage());
+            logger.error("Ошибка во время запуска индексации: {}", e.getMessage(), e);
             return createErrorResponse("Ошибка запуска индексации: " + e.getMessage(), responseMap);
         }
-
-        return ResponseEntity.ok(responseMap);
     }
 
     @GetMapping("/stopIndexing")
@@ -91,10 +84,7 @@ public class DefaultController {
         }
 
         indexingService.stopIndexing();
-        responseMap.put("result", true);
-        responseMap.put("message", "Индексация остановлена успешно");
-        logger.info("Индексация остановлена");
-        return ResponseEntity.ok(responseMap);
+        return createSuccessResponse(responseMap, "Индексация остановлена успешно");
     }
 
     private searchengine.model.Site createModelSite(searchengine.config.Site newSite) {
@@ -110,5 +100,12 @@ public class DefaultController {
         responseMap.put("result", false);
         responseMap.put("error", message);
         return ResponseEntity.badRequest().body(responseMap);
+    }
+
+    private ResponseEntity<Map<String, Object>> createSuccessResponse(Map<String, Object> responseMap, String message) {
+        responseMap.put("result", true);
+        responseMap.put("message", message);
+        logger.info(message);
+        return ResponseEntity.ok(responseMap);
     }
 }

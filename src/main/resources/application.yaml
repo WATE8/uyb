@@ -17,17 +17,17 @@ spring:
 
 indexing-settings:
   sites:
-    - url: "http://www.playback.ru"
-      name: "Playback"
     - url: "https://volochek.life"
       name: "Volochek Life"
     - url: "https://ipfran.ru"
       name: "IPFRAN"
     - url: "https://dimonvideo.ru"
       name: "DimonVideo"
-    - url: "https://nikoartgallery.com"
-      name: "Niko Art Gallery"
     - url: "https://et-cetera.ru/mobile/"
       name: "Et Cetera Mobile"
     - url: "https://www.svetlovka.ru"
       name: "Svetlovka"
+    - url: "http://www.playback.ru"
+      name: "Playback"
+    - url: "https://nikoartgallery.com"
+      name: "Niko Art Gallery"
