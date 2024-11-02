@@ -26,7 +26,7 @@ public class Site {
     private String lastError;
 
     @NotNull
-    @Column(nullable = false)
+    @Column(unique = true, nullable = false) // Уникальный индекс на поле url
     private String url;
 
     @NotNull

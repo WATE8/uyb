@@ -107,8 +107,7 @@ public class IndexingService {
     }
 
     private void updateSiteStatus(Site site, Status status, String lastError) {
-        site.setStatus(status);
-        site.setStatusTime(LocalDateTime.now());
+        site.updateStatus(status);  // Использование метода updateStatus
         if (lastError != null) {
             site.setLastError(lastError);
         }
@@ -147,7 +146,7 @@ public class IndexingService {
             }
         } catch (InterruptedException e) {
             logger.error("Ошибка при завершении: {}", e.getMessage());
-            Thread.currentThread().interrupt();
+            Thread.currentThread().interrupt(); // Восстанавливаем статус прерывания
         }
     }
 
@@ -173,9 +172,9 @@ public class IndexingService {
             try {
                 Thread.sleep(500 + (int) (Math.random() * 4500)); // Задержка между запросами 0,5–5 секунд
 
-                Document doc = webCrawler.fetchPageContent(url);
+                Document doc = webCrawler.fetchPageContent(url); // Используем url
                 if (doc != null) {
-                    savePage(site, url, doc);
+                    savePage(site, url, doc); // Используем url
 
                     List<PageCrawlerTask> subTasks = doc.select("a[href]").stream()
                             .map(link -> link.absUrl("href"))
@@ -187,7 +186,7 @@ public class IndexingService {
                 }
             } catch (Exception e) {
                 updateSiteStatus(site, Status.FAILED, e.getMessage());
-                logger.error("Ошибка при обработке страницы {}: {}", url, e.getMessage());
+                logger.error("Ошибка при обработке страницы {}: {}", url, e.getMessage()); // Используем url
             }
             return null;
         }

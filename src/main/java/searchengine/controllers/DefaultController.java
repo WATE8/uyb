@@ -40,16 +40,12 @@ public class DefaultController {
         }
 
         // Сохранение нового сайта в базе данных
-        searchengine.model.Site modelSite = new searchengine.model.Site(); // Создание экземпляра модельного класса
-        modelSite.setUrl(newSite.getUrl());
-        modelSite.setName(newSite.getName());
-        modelSite.setStatus(Status.INDEXING); // Установка статуса, если необходимо
-        modelSite.setStatusTime(LocalDateTime.now()); // Установка времени статуса
+        searchengine.model.Site modelSite = createModelSite(newSite);
         siteRepository.save(modelSite);
 
         response.put("result", true);
         response.put("message", "Сайт успешно добавлен: " + modelSite.getUrl());
-        logger.info("Добавлен новый сайт: {}", modelSite.getUrl()); // Логирование добавления сайта
+        logger.info("Добавлен новый сайт: {}", modelSite.getUrl());
         return ResponseEntity.ok(response);
     }
 
@@ -65,8 +61,8 @@ public class DefaultController {
         }
 
         // Получаем список сайтов из конфигурации
-        List<searchengine.config.Site> configSites = sitesList.getSites(); // Извлечение списка сайтов
-        logger.info("Найденные сайты для индексации: {}", configSites); // Логирование списка сайтов
+        List<searchengine.config.Site> configSites = sitesList.getSites();
+        logger.info("Найденные сайты для индексации: {}", configSites);
 
         if (configSites.isEmpty()) {
             response.put("result", false);
@@ -76,15 +72,11 @@ public class DefaultController {
 
         try {
             // Обновляем статус каждого сайта и запускаем индексацию
-            for (searchengine.config.Site configSite : configSites) {
-                searchengine.model.Site site = new searchengine.model.Site();
-                site.setUrl(configSite.getUrl());
-                site.setName(configSite.getName());
-                site.setStatus(Status.INDEXING);
-                site.setStatusTime(LocalDateTime.now());
+            configSites.forEach(configSite -> {
+                searchengine.model.Site site = createModelSite(configSite);
                 siteRepository.save(site);
                 logger.info("Старт индексации сайта: {}", site.getUrl());
-            }
+            });
 
             indexingService.startFullIndexing();
             response.put("result", true);
@@ -121,5 +113,14 @@ public class DefaultController {
         }
 
         return ResponseEntity.ok(response);
+    }
+
+    private searchengine.model.Site createModelSite(searchengine.config.Site configSite) {
+        searchengine.model.Site site = new searchengine.model.Site();
+        site.setUrl(configSite.getUrl());
+        site.setName(configSite.getName());
+        site.setStatus(Status.INDEXING);
+        site.setStatusTime(LocalDateTime.now());
+        return site;
     }
 }
