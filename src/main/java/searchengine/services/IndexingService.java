@@ -130,8 +130,10 @@ public class IndexingService {
                 site.setStatusTime(LocalDateTime.now());
                 siteRepository.save(site); // Обновляем статус времени
 
+                // Используем фейковый User-Agent и referrer
                 Connection.Response response = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
+                        .referrer("http://www.google.com")
                         .execute();
 
                 String contentType = response.contentType();
