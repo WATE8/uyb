@@ -42,21 +42,24 @@ public class IndexingService {
     }
 
     private void performIndexing() {
+        long startTime = System.currentTimeMillis(); // Start time measurement
         for (Site site : sitesList.getSites()) {
+            long siteStartTime = System.currentTimeMillis(); // Start time for each site
             try {
                 Document document = Jsoup.connect(site.getUrl()).get();
-
                 String title = document.title();
                 String body = document.body().text();
-
                 indexContent(site.getUrl(), title, body);
-
             } catch (IOException e) {
-                logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e); // Используйте {} для вставки значений
+                logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
+                // Возможно, стоит добавить логику повторной попытки или сохранить состояние для дальнейшей обработки
+            } finally {
+                long siteDuration = System.currentTimeMillis() - siteStartTime; // Calculate site duration
+                logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
             }
         }
-
-        logger.info("Индексация завершена.");
+        long totalDuration = System.currentTimeMillis() - startTime; // Total duration
+        logger.info("Индексация завершена за {} мс.", totalDuration);
     }
 
     private void indexContent(String url, String title, String body) {
