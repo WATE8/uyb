@@ -20,7 +20,7 @@ public class DefaultController {
     }
 
     @GetMapping("/api/startIndexing")
-    public ResponseEntity<?> startIndexing(@RequestParam(value = "depth", defaultValue = "3") int depth) { // Параметр глубины
+    public ResponseEntity<?> startIndexing(@RequestParam(value = "depth", defaultValue = "1") int depth) { // Параметр глубины
         if (indexingService.isIndexingInProgress()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("result", false, "error", "Индексация уже запущена"));
