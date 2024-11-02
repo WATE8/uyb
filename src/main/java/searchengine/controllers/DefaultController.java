@@ -1,18 +1,17 @@
 package searchengine.controllers;
 
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
 import searchengine.services.IndexingService;
-import searchengine.model.Site;
 import searchengine.repositories.SiteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.Status;
+import searchengine.config.SitesList;
 import java.time.LocalDateTime;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,10 +23,38 @@ public class DefaultController {
 
     private final IndexingService indexingService;
     private final SiteRepository siteRepository;
+    private final SitesList sitesList; // Внедрение SitesList
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
 
+    @PostMapping("/addSite")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> addSite(@RequestBody searchengine.config.Site newSite) {
+        Map<String, Object> response = new HashMap<>();
+
+        // Проверка, существует ли сайт с таким URL
+        if (siteRepository.findByUrl(newSite.getUrl()).isPresent()) {
+            response.put("result", false);
+            response.put("error", "Сайт уже существует");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        // Сохранение нового сайта в базе данных
+        searchengine.model.Site modelSite = new searchengine.model.Site(); // Создание экземпляра модельного класса
+        modelSite.setUrl(newSite.getUrl());
+        modelSite.setName(newSite.getName());
+        modelSite.setStatus(Status.INDEXING); // Установка статуса, если необходимо
+        modelSite.setStatusTime(LocalDateTime.now()); // Установка времени статуса
+        siteRepository.save(modelSite);
+
+        response.put("result", true);
+        response.put("message", "Сайт успешно добавлен: " + modelSite.getUrl());
+        logger.info("Добавлен новый сайт: {}", modelSite.getUrl()); // Логирование добавления сайта
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/startIndexing")
+    @Transactional
     public ResponseEntity<Map<String, Object>> startIndexing() {
         Map<String, Object> response = new HashMap<>();
 
@@ -37,17 +64,22 @@ public class DefaultController {
             return ResponseEntity.badRequest().body(response);
         }
 
-        try {
-            // Получаем список сайтов из базы данных
-            List<Site> sites = siteRepository.findAll();
-            if (sites.isEmpty()) {
-                response.put("result", false);
-                response.put("error", "Нет сайтов для индексации");
-                return ResponseEntity.badRequest().body(response);
-            }
+        // Получаем список сайтов из конфигурации
+        List<searchengine.config.Site> configSites = sitesList.getSites(); // Извлечение списка сайтов
+        logger.info("Найденные сайты для индексации: {}", configSites); // Логирование списка сайтов
 
+        if (configSites.isEmpty()) {
+            response.put("result", false);
+            response.put("error", "Нет сайтов для индексации");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        try {
             // Обновляем статус каждого сайта и запускаем индексацию
-            for (Site site : sites) {
+            for (searchengine.config.Site configSite : configSites) {
+                searchengine.model.Site site = new searchengine.model.Site();
+                site.setUrl(configSite.getUrl());
+                site.setName(configSite.getName());
                 site.setStatus(Status.INDEXING);
                 site.setStatusTime(LocalDateTime.now());
                 siteRepository.save(site);
@@ -56,10 +88,11 @@ public class DefaultController {
 
             indexingService.startFullIndexing();
             response.put("result", true);
+            logger.info("Индексация успешно запущена для {} сайтов", configSites.size());
         } catch (Exception e) {
             logger.error("Ошибка во время процесса индексации: {}", e.getMessage());
             response.put("result", false);
-            response.put("error", "Ошибка при запуске индексации");
+            response.put("error", "Ошибка при запуске индексации: " + e.getMessage());
             return ResponseEntity.internalServerError().body(response);
         }
 
@@ -83,7 +116,7 @@ public class DefaultController {
         } catch (Exception e) {
             logger.error("Ошибка при остановке индексации: {}", e.getMessage());
             response.put("result", false);
-            response.put("error", "Ошибка при остановке индексации");
+            response.put("error", "Ошибка при остановке индексации: " + e.getMessage());
             return ResponseEntity.internalServerError().body(response);
         }
 

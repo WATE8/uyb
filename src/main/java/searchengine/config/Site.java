@@ -9,7 +9,11 @@ public class Site {
     private String url;
     private String name;
 
-    // Constructor for easy initialization
+    // Пустой конструктор для совместимости с Spring
+    public Site() {
+    }
+
+    // Конструктор для удобства инициализации
     public Site(String url, String name) {
         this.url = url;
         this.name = name;
