@@ -66,17 +66,21 @@ public class IndexingService {
             long siteStartTime = System.currentTimeMillis();
             SiteBaza siteEntity = new SiteBaza();
             try {
+                // Создаем новую запись в Site с статусом INDEXING
                 siteEntity.setUrl(site.getUrl());
                 siteEntity.setName(site.getName());
-                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatus(Status.INDEXING);  // Устанавливаем статус INDEXING
                 siteEntity.setStatusTime(LocalDateTime.now());
                 siteRepository.save(siteEntity);
 
-                indexPageAndLinks(siteEntity, site.getUrl(), 0, depth); // Передаем глубину
+                // Запуск индексации страницы с учетом глубины
+                indexPageAndLinks(siteEntity, site.getUrl(), 0, depth);
 
+                // Обновляем статус на INDEXED после завершения индексации
                 siteEntity.setStatus(Status.INDEXED);
                 siteRepository.save(siteEntity);
             } catch (IOException e) {
+                // Обработка ошибок и обновление статуса на FAILED
                 logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
                 siteEntity.setStatus(Status.FAILED);
                 siteEntity.setLastError(e.getMessage());
