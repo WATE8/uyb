@@ -41,36 +41,38 @@ public class IndexingService {
     }
 
     public void startFullIndexing() {
-        if (indexingInProgress.get()) {
+        if (indexingInProgress.getAndSet(true)) {
             throw new IllegalStateException("Индексация уже запущена");
         }
 
-        indexingInProgress.set(true);
         stopIndexing.set(false);
 
         sitesList.getSites().forEach(siteConfig -> {
             // Удаление существующего сайта и страниц
-            Optional<Site> existingSiteOpt = siteRepository.findByUrl(siteConfig.getUrl());
+            Optional<Site> existingSiteOpt = siteRepository.findFirstByUrl(siteConfig.getUrl());
 
-            // Проверяем, существует ли сайт
-            if (existingSiteOpt.isPresent()) {
-                Site existingSite = existingSiteOpt.get(); // Получаем Site из Optional
+            existingSiteOpt.ifPresent(existingSite -> {
                 pageRepository.deleteBySiteId(existingSite.getId());
                 siteRepository.deleteById(existingSite.getId());
-            }
+            });
 
             // Создание нового сайта
-            Site site = new Site();
-            site.setUrl(siteConfig.getUrl());
-            site.setName(siteConfig.getName());
-            site.setStatus(Status.INDEXING);
-            site.setStatusTime(LocalDateTime.now());
+            Site site = convertToModelSite(siteConfig);
             siteRepository.save(site);
             logger.info("Запущена индексация сайта: {}", site.getUrl());
 
             // Запуск индексации в отдельном потоке
             siteIndexingExecutor.submit(() -> indexSite(site));
         });
+    }
+
+    private Site convertToModelSite(searchengine.config.Site configSite) {
+        Site modelSite = new Site();
+        modelSite.setUrl(configSite.getUrl());
+        modelSite.setName(configSite.getName());
+        modelSite.setStatus(Status.INDEXING);
+        modelSite.setStatusTime(LocalDateTime.now());
+        return modelSite;
     }
 
     private void indexSite(Site site) {
@@ -133,16 +135,17 @@ public class IndexingService {
 
     @PreDestroy
     public void shutdown() {
-        siteIndexingExecutor.shutdownNow();
-        forkJoinPool.shutdownNow();
+        shutdownExecutorService(siteIndexingExecutor);
+        shutdownExecutorService(forkJoinPool);
+    }
+
+    private void shutdownExecutorService(ExecutorService executorService) {
+        executorService.shutdownNow();
         logger.info("Попытка завершить потоки индексации...");
 
         try {
-            if (!siteIndexingExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
                 logger.error("Executor service не завершился!");
-            }
-            if (!forkJoinPool.awaitTermination(60, TimeUnit.SECONDS)) {
-                logger.error("ForkJoinPool не завершился!");
             }
         } catch (InterruptedException e) {
             logger.error("Ошибка при завершении: {}", e.getMessage());

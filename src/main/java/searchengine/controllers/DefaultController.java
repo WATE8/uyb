@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.Status;
 import searchengine.config.SitesList;
+
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -23,7 +24,7 @@ public class DefaultController {
 
     private final IndexingService indexingService;
     private final SiteRepository siteRepository;
-    private final SitesList sitesList; // Внедрение SitesList
+    private final SitesList sitesList;
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultController.class);
 
@@ -34,9 +35,7 @@ public class DefaultController {
 
         // Проверка, существует ли сайт с таким URL
         if (siteRepository.findByUrl(newSite.getUrl()).isPresent()) {
-            response.put("result", false);
-            response.put("error", "Сайт уже существует");
-            return ResponseEntity.badRequest().body(response);
+            return createErrorResponse("Сайт уже существует", response);
         }
 
         // Сохранение нового сайта в базе данных
@@ -55,9 +54,7 @@ public class DefaultController {
         Map<String, Object> response = new HashMap<>();
 
         if (indexingService.isIndexingInProgress()) {
-            response.put("result", false);
-            response.put("error", "Индексация уже запущена");
-            return ResponseEntity.badRequest().body(response);
+            return createErrorResponse("Индексация уже запущена", response);
         }
 
         // Получаем список сайтов из конфигурации
@@ -65,13 +62,10 @@ public class DefaultController {
         logger.info("Найденные сайты для индексации: {}", configSites);
 
         if (configSites.isEmpty()) {
-            response.put("result", false);
-            response.put("error", "Нет сайтов для индексации");
-            return ResponseEntity.badRequest().body(response);
+            return createErrorResponse("Нет сайтов для индексации", response);
         }
 
         try {
-            // Обновляем статус каждого сайта и запускаем индексацию
             configSites.forEach(configSite -> {
                 searchengine.model.Site site = createModelSite(configSite);
                 siteRepository.save(site);
@@ -83,9 +77,7 @@ public class DefaultController {
             logger.info("Индексация успешно запущена для {} сайтов", configSites.size());
         } catch (Exception e) {
             logger.error("Ошибка во время процесса индексации: {}", e.getMessage());
-            response.put("result", false);
-            response.put("error", "Ошибка при запуске индексации: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(response);
+            return createErrorResponse("Ошибка при запуске индексации: " + e.getMessage(), response);
         }
 
         return ResponseEntity.ok(response);
@@ -96,9 +88,7 @@ public class DefaultController {
         Map<String, Object> response = new HashMap<>();
 
         if (!indexingService.isIndexingInProgress()) {
-            response.put("result", false);
-            response.put("error", "Индексация не запущена");
-            return ResponseEntity.badRequest().body(response);
+            return createErrorResponse("Индексация не запущена", response);
         }
 
         try {
@@ -107,9 +97,7 @@ public class DefaultController {
             response.put("result", true);
         } catch (Exception e) {
             logger.error("Ошибка при остановке индексации: {}", e.getMessage());
-            response.put("result", false);
-            response.put("error", "Ошибка при остановке индексации: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(response);
+            return createErrorResponse("Ошибка при остановке индексации: " + e.getMessage(), response);
         }
 
         return ResponseEntity.ok(response);
@@ -122,5 +110,11 @@ public class DefaultController {
         site.setStatus(Status.INDEXING);
         site.setStatusTime(LocalDateTime.now());
         return site;
+    }
+
+    private ResponseEntity<Map<String, Object>> createErrorResponse(String errorMessage, Map<String, Object> response) {
+        response.put("result", false);
+        response.put("error", errorMessage);
+        return ResponseEntity.badRequest().body(response);
     }
 }
