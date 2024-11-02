@@ -4,14 +4,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam; // Импорт для параметров запроса
+import searchengine.services.IndexingService;
 
-import searchengine.services.IndexingService; // Предполагается, что у вас есть такой сервис
 import java.util.Map;
 
-@Controller // Изменяем на Controller
+@Controller
 public class DefaultController {
 
-    private final IndexingService indexingService; // Сервис для индексации
+    private final IndexingService indexingService;
 
     @Autowired
     public DefaultController(IndexingService indexingService) {
@@ -19,18 +20,23 @@ public class DefaultController {
     }
 
     @GetMapping("/api/startIndexing")
-    public ResponseEntity<?> startIndexing() {
+    public ResponseEntity<?> startIndexing(@RequestParam(value = "depth", defaultValue = "3") int depth) { // Параметр глубины
         if (indexingService.isIndexingInProgress()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("result", false, "error", "Индексация уже запущена"));
         }
 
-        indexingService.startIndexing(); // Метод запуска индексации
-        return ResponseEntity.ok(Map.of("result", true));
+        try {
+            indexingService.startIndexing(depth); // Передаем глубину в метод запуска индексации
+            return ResponseEntity.ok(Map.of("result", true));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("result", false, "error", "Ошибка при запуске индексации: " + e.getMessage()));
+        }
     }
 
-    @GetMapping("/") // Оставляем этот метод для корневого маршрута
+    @GetMapping("/")
     public String index() {
-        return "index"; // Возврат HTML-страницы
+        return "index";
     }
 }

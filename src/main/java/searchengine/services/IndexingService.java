@@ -27,13 +27,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
-    private static final int MAX_DEPTH = 3; // Максимальная глубина индексации
+    private static final int MAX_DEPTH = 5; // Максимальная глубина индексации
     private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
     private final SitesList sitesList;
-
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final Set<String> indexedUrls = new HashSet<>(); // Множество для отслеживания проиндексированных URL
+    private final Set<String> indexedUrls = new HashSet<>();
 
     @Autowired
     public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
@@ -46,10 +45,13 @@ public class IndexingService {
         return indexingInProgress.get();
     }
 
-    public void startIndexing() {
+    public void startIndexing(int depth) {
+        if (depth < 1 || depth > MAX_DEPTH) {
+            throw new IllegalArgumentException("Глубина индексации должна быть от 1 до " + MAX_DEPTH);
+        }
         if (indexingInProgress.compareAndSet(false, true)) {
             try {
-                performIndexing();
+                performIndexing(depth);
             } finally {
                 indexingInProgress.set(false);
             }
@@ -58,47 +60,42 @@ public class IndexingService {
         }
     }
 
-    private void performIndexing() {
-        long startTime = System.currentTimeMillis(); // Начало измерения времени
+    private void performIndexing(int depth) {
+        long startTime = System.currentTimeMillis();
         for (Site site : sitesList.getSites()) {
-            long siteStartTime = System.currentTimeMillis(); // Время для каждого сайта
-            SiteBaza siteEntity = new SiteBaza(); // Создание экземпляра SiteBaza
+            long siteStartTime = System.currentTimeMillis();
+            SiteBaza siteEntity = new SiteBaza();
             try {
-                // Сохраняем информацию о сайте в базе данных
                 siteEntity.setUrl(site.getUrl());
                 siteEntity.setName(site.getName());
                 siteEntity.setStatus(Status.INDEXING);
                 siteEntity.setStatusTime(LocalDateTime.now());
-                siteRepository.save(siteEntity); // Сохраняем сайт
+                siteRepository.save(siteEntity);
 
-                // Индексируем главную страницу сайта
-                indexPageAndLinks(siteEntity, site.getUrl(), 0);
+                indexPageAndLinks(siteEntity, site.getUrl(), 0, depth); // Передаем глубину
 
-                // Устанавливаем статус сайта на INDEXED после успешной индексации
                 siteEntity.setStatus(Status.INDEXED);
-                siteRepository.save(siteEntity); // Обновляем информацию о сайте
-
+                siteRepository.save(siteEntity);
             } catch (IOException e) {
                 logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
-                // Обновляем статус сайта на FAILED в случае ошибки
                 siteEntity.setStatus(Status.FAILED);
                 siteEntity.setLastError(e.getMessage());
-                siteRepository.save(siteEntity); // Обновляем информацию о сайте
+                siteRepository.save(siteEntity);
             } finally {
-                long siteDuration = System.currentTimeMillis() - siteStartTime; // Время индексации сайта
+                long siteDuration = System.currentTimeMillis() - siteStartTime;
                 logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
             }
         }
-        long totalDuration = System.currentTimeMillis() - startTime; // Общее время индексации
+        long totalDuration = System.currentTimeMillis() - startTime;
         logger.info("Индексация завершена за {} мс.", totalDuration);
     }
 
-    private void indexPageAndLinks(SiteBaza site, String url, int depth) throws IOException {
-        if (depth > MAX_DEPTH || indexedUrls.contains(url)) {
+    private void indexPageAndLinks(SiteBaza site, String url, int depth, int maxDepth) throws IOException {
+        if (depth >= maxDepth || indexedUrls.contains(url)) {
             return; // Выход, если достигнута максимальная глубина или URL уже проиндексирован
         }
 
-        indexedUrls.add(url); // Добавляем URL в список проиндексированных
+        indexedUrls.add(url);
 
         try {
             Connection.Response response = Jsoup.connect(url)
@@ -108,21 +105,20 @@ public class IndexingService {
             String contentType = response.contentType();
             if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
                 logger.warn("Некорректный тип контента для URL: {}", url);
-                return; // Пропустить этот URL
+                return;
             }
 
             Document document = response.parse();
             String title = document.title();
             String body = document.body().text();
 
-            indexContent(site, title, body, url); // Индексируем содержимое страницы
+            indexContent(site, title, body, url);
 
-            // Извлекаем все ссылки на странице
             Elements links = document.select("a[href]");
             for (Element link : links) {
                 String absUrl = link.absUrl("href");
-                if (isValidUrl(absUrl, site.getUrl())) { // Проверка на допустимый URL
-                    indexPageAndLinks(site, absUrl, depth + 1); // Рекурсивно индексируем найденные ссылки
+                if (isValidUrl(absUrl, site.getUrl())) {
+                    indexPageAndLinks(site, absUrl, depth + 1, maxDepth); // Рекурсивно индексируем с учетом maxDepth
                 }
             }
         } catch (IOException e) {
@@ -131,20 +127,17 @@ public class IndexingService {
     }
 
     private boolean isValidUrl(String url, String baseUrl) {
-        return url.startsWith(baseUrl); // Проверка, что URL начинается с базового URL сайта
+        return url.startsWith(baseUrl);
     }
 
     private void indexContent(SiteBaza site, String title, String body, String url) {
-        // Сохраняем информацию о странице в базе данных
         Page page = new Page();
         page.setSiteId(site.getId());
-        page.setPath(url); // Установите правильный путь (можно извлечь из URL)
-        page.setCode(200); // Установите код ответа, например, 200
-        page.setContent(body); // Содержимое страницы
+        page.setPath(url);
+        page.setCode(200);
+        page.setContent(body);
 
-        pageRepository.save(page); // Сохраняем страницу в базе данных
-
-        // Реализуйте вашу логику индексации с использованием Apache Lucene
+        pageRepository.save(page);
         logger.info("Индексация сайта: {}", site.getUrl());
         logger.info("Заголовок: {}", title);
         logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "...");
