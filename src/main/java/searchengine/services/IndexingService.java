@@ -116,17 +116,21 @@ public class IndexingService {
             String title = document.title();
             String body = document.body().text();
 
-            indexContent(site, title, body, url);
+            // Индексация содержимого страницы с установкой статуса
+            indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
 
+            // Извлечение ссылок и рекурсивный обход
             Elements links = document.select("a[href]");
             for (Element link : links) {
                 String absUrl = link.absUrl("href");
                 if (isValidUrl(absUrl, site.getUrl())) {
-                    indexPageAndLinks(site, absUrl, depth + 1, maxDepth); // Рекурсивно индексируем с учетом maxDepth
+                    indexPageAndLinks(site, absUrl, depth + 1, maxDepth); // Рекурсивно индексируем
                 }
             }
         } catch (IOException e) {
             logger.error("Ошибка при извлечении контента с URL: {}", url, e);
+            // Дополнительно можно сохранить страницу с ошибкой, если это необходимо
+            indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
         }
     }
 
@@ -134,15 +138,15 @@ public class IndexingService {
         return url.startsWith(baseUrl);
     }
 
-    private void indexContent(SiteBaza site, String title, String body, String url) {
+    private void indexContent(SiteBaza site, String title, String body, String url, int code) {
         Page page = new Page();
         page.setSiteId(site.getId());
         page.setPath(url);
-        page.setCode(200);
+        page.setCode(code); // Устанавливаем код состояния
         page.setContent(body);
 
-        pageRepository.save(page);
-        logger.info("Индексация сайта: {}", site.getUrl());
+        pageRepository.save(page); // Сохранение страницы в базе данных
+        logger.info("Индексация страницы: {}", url);
         logger.info("Заголовок: {}", title);
         logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "...");
     }
