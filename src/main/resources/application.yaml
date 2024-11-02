@@ -19,7 +19,5 @@ indexing-settings:
   sites:
     - url: "https://volochek.life"
       name: "Volochek Life"
-    - url: "https://et-cetera.ru/mobile/"
-      name: "Et Cetera Mobile"
     - url: "http://www.playback.ru"
       name: "Playback"
