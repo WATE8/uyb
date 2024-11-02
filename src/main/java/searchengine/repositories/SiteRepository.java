@@ -7,5 +7,7 @@ import java.util.Optional;
 
 public interface SiteRepository extends JpaRepository<Site, Integer> {
     Optional<Site> findByUrl(String url); // Поиск сайта по URL
-    Optional<Site> findFirstByUrl(String url); // Поиск первого сайта по URL
+
+    // Метод для проверки существования сайта с данным URL
+    boolean existsByUrl(String url);
 }

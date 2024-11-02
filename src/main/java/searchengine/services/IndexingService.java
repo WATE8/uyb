@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
-import jakarta.annotation.PreDestroy;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -16,8 +15,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.*;
 
 @Service
@@ -46,27 +43,24 @@ public class IndexingService {
         }
 
         stopIndexing.set(false);
-
         sitesList.getSites().forEach(siteConfig -> {
-            // Удаление существующего сайта и страниц
-            Optional<Site> existingSiteOpt = siteRepository.findFirstByUrl(siteConfig.getUrl());
+            Site existingSite = siteRepository.findByUrl(siteConfig.getUrl()).orElse(null);
 
-            existingSiteOpt.ifPresent(existingSite -> {
+            if (existingSite != null) {
                 pageRepository.deleteBySiteId(existingSite.getId());
-                siteRepository.deleteById(existingSite.getId());
-            });
+                siteRepository.delete(existingSite);
+                logger.info("Удалены старые данные для сайта: {}", existingSite.getUrl());
+            }
 
-            // Создание нового сайта
-            Site site = convertToModelSite(siteConfig);
+            Site site = createSiteFromConfig(siteConfig);
             siteRepository.save(site);
-            logger.info("Запущена индексация сайта: {}", site.getUrl());
+            logger.info("Запущена индексация нового сайта: {}", site.getUrl());
 
-            // Запуск индексации в отдельном потоке
             siteIndexingExecutor.submit(() -> indexSite(site));
         });
     }
 
-    private Site convertToModelSite(searchengine.config.Site configSite) {
+    private Site createSiteFromConfig(searchengine.config.Site configSite) {
         Site modelSite = new Site();
         modelSite.setUrl(configSite.getUrl());
         modelSite.setName(configSite.getName());
@@ -88,19 +82,21 @@ public class IndexingService {
             Document doc = webCrawler.fetchPageContent(site.getUrl());
             if (doc != null) {
                 savePage(site, site.getUrl(), doc);
-                forkJoinPool.invoke(new PageCrawlerTask(site, site.getUrl()));
+                updateSiteStatus(site, Status.INDEXED, null);
+                logger.info("Индексация сайта завершена успешно: {}", site.getUrl());
             } else {
                 updateSiteStatus(site, Status.FAILED, "Не удалось получить содержимое страницы: " + site.getUrl());
+                logger.error("Не удалось получить содержимое страницы: {}", site.getUrl());
             }
-            updateSiteStatus(site, Status.INDEXED, null);
         } catch (Exception e) {
-            updateSiteStatus(site, Status.FAILED, e.getMessage());
-            logger.error("Ошибка индексации сайта {}: {}", site.getUrl(), e.getMessage());
+            String errorMessage = "Ошибка индексации сайта " + site.getUrl() + ": " + e.getMessage();
+            updateSiteStatus(site, Status.FAILED, errorMessage);
+            logger.error(errorMessage, e);
         }
     }
 
     private void savePage(Site site, String url, Document doc) {
-        int statusCode = getStatusCode(url);
+        int statusCode = getStatusCode(); // Замените на вашу логику получения кода статуса
         if (!pageRepository.existsBySiteAndPath(site, url)) {
             Page page = new Page(site, url, statusCode, doc.html());
             pageRepository.save(page);
@@ -109,10 +105,11 @@ public class IndexingService {
     }
 
     private void updateSiteStatus(Site site, Status status, String lastError) {
-        site.updateStatus(status);  // Использование метода updateStatus
+        site.setStatus(status);
         if (lastError != null) {
             site.setLastError(lastError);
         }
+        site.setStatusTime(LocalDateTime.now());
         siteRepository.save(site);
         logger.info("Обновлен статус сайта: {} на {}", site.getUrl(), status);
     }
@@ -125,73 +122,15 @@ public class IndexingService {
         siteIndexingExecutor.shutdownNow();
         forkJoinPool.shutdownNow();
 
-        List<Site> sites = siteRepository.findAll();
-        sites.forEach(site -> {
+        siteRepository.findAll().forEach(site -> {
             if (!pageRepository.existsBySiteId(site.getId())) {
                 updateSiteStatus(site, Status.FAILED, "Индексация остановлена пользователем");
             }
         });
     }
 
-    @PreDestroy
-    public void shutdown() {
-        shutdownExecutorService(siteIndexingExecutor);
-        shutdownExecutorService(forkJoinPool);
-    }
-
-    private void shutdownExecutorService(ExecutorService executorService) {
-        executorService.shutdownNow();
-        logger.info("Попытка завершить потоки индексации...");
-
-        try {
-            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
-                logger.error("Executor service не завершился!");
-            }
-        } catch (InterruptedException e) {
-            logger.error("Ошибка при завершении: {}", e.getMessage());
-            Thread.currentThread().interrupt(); // Восстанавливаем статус прерывания
-        }
-    }
-
-    private int getStatusCode(String url) {
-        return webCrawler.getStatusCode(url);
-    }
-
-    private class PageCrawlerTask extends RecursiveTask<Void> {
-        private final Site site;
-        private final String url;
-
-        public PageCrawlerTask(Site site, String url) {
-            this.site = site;
-            this.url = url;
-        }
-
-        @Override
-        protected Void compute() {
-            if (stopIndexing.get() || pageRepository.existsBySiteAndPath(site, url)) {
-                return null;
-            }
-
-            try {
-                Thread.sleep(500 + (int) (Math.random() * 4500)); // Задержка между запросами 0,5–5 секунд
-
-                Document doc = webCrawler.fetchPageContent(url); // Используем url
-                if (doc != null) {
-                    savePage(site, url, doc); // Используем url
-
-                    List<PageCrawlerTask> subTasks = doc.select("a[href]").stream()
-                            .map(link -> link.absUrl("href"))
-                            .filter(linkUrl -> linkUrl.startsWith(site.getUrl()))
-                            .distinct()
-                            .map(linkUrl -> new PageCrawlerTask(site, linkUrl))
-                            .toList();
-                    invokeAll(subTasks);
-                }
-            } catch (Exception e) {
-                updateSiteStatus(site, Status.FAILED, e.getMessage());
-                logger.error("Ошибка при обработке страницы {}: {}", url, e.getMessage()); // Используем url
-            }
-            return null;
-        }
+    private int getStatusCode() {
+        // Реализуйте логику для получения кода статуса страницы
+        return 200; // пример статуса
     }
 }

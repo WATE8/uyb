@@ -5,9 +5,12 @@ import searchengine.model.Page;
 import searchengine.model.Site;
 
 public interface PageRepository extends JpaRepository<Page, Integer> {
-    void deleteBySiteId(Integer siteId); // Изменено на Integer
+    // Удаляет все страницы по ID сайта
+    void deleteBySiteId(Integer siteId);
 
-    boolean existsBySiteId(Integer siteId); // Изменено на Integer
+    // Проверяет, существуют ли страницы для данного сайта
+    boolean existsBySiteId(Integer siteId);
 
+    // Проверяет, существует ли страница с указанным сайтом и путем
     boolean existsBySiteAndPath(Site site, String path);
 }

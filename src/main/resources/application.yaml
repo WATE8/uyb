@@ -17,7 +17,11 @@ spring:
 
 indexing-settings:
   sites:
-    - url: "https://dimonvideo.ru"
-      name: "DimonVideo"
+
+
+
     - url: "https://www.svetlovka.ru"
       name: "Svetlovka"
+
+    - url: "https://et-cetera.ru/mobile/"
+      name: "Et Cetera Mobile"
