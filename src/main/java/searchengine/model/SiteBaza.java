@@ -20,18 +20,17 @@ public class SiteBaza {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Status status;
+    private Status status; // Статус индексации (INDEXING, INDEXED, FAILED)
 
     @Column(name = "status_time", nullable = false)
-    private LocalDateTime statusTime;
+    private LocalDateTime statusTime; // Дата и время статуса
 
     @Column(name = "last_error", columnDefinition = "TEXT")
-    private String lastError;
+    private String lastError; // Текст ошибки индексации или NULL
 
-    @Column(nullable = false)
-    private String url;
+    @Column(nullable = false, length = 255) // Длина URL ограничена 255 символами
+    private String url; // Адрес главной страницы сайта
 
-    @Column(nullable = false)
-    private String name;
+    @Column(nullable = false, length = 255) // Длина имени сайта ограничена 255 символами
+    private String name; // Имя сайта
 }
-

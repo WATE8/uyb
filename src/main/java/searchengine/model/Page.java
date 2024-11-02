@@ -20,12 +20,12 @@ public class Page {
     @Column(name = "site_id", nullable = false)
     private Integer siteId;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Column(nullable = false, columnDefinition = "TEXT") // Используйте TEXT для адреса страницы
     private String path;
 
     @Column(nullable = false)
     private Integer code;
 
-    @Column(nullable = false, columnDefinition = "MEDIUMTEXT")
+    @Column(nullable = false, columnDefinition = "MEDIUMTEXT") // Используйте MEDIUMTEXT для контента страницы
     private String content;
 }
