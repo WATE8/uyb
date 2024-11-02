@@ -31,6 +31,7 @@ public class IndexingService {
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
     private static final int MAX_DEPTH = 5; // Максимальная глубина индексации
     private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
+    private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
@@ -53,6 +54,7 @@ public class IndexingService {
             throw new IllegalArgumentException("Глубина индексации должна быть от 1 до " + MAX_DEPTH);
         }
         if (indexingInProgress.compareAndSet(false, true)) {
+            stopRequested.set(false); // Сбрасываем флаг остановки
             try {
                 performIndexing(depth);
             } finally {
@@ -60,6 +62,24 @@ public class IndexingService {
             }
         } else {
             throw new IllegalStateException("Индексация уже запущена");
+        }
+    }
+
+    public void stopIndexing() {
+        if (indexingInProgress.get()) {
+            stopRequested.set(true); // Устанавливаем флаг остановки
+            // Обновляем статус для всех сайтов
+            for (Site site : sitesList.getSites()) {
+                SiteBaza siteEntity = siteRepository.findByUrl(site.getUrl());
+                if (siteEntity != null) {
+                    siteEntity.setStatus(Status.FAILED);
+                    siteEntity.setLastError("Индексация остановлена пользователем");
+                    siteRepository.save(siteEntity);
+                }
+            }
+            logger.info("Индексация остановлена пользователем");
+        } else {
+            throw new IllegalStateException("Индексация не запущена");
         }
     }
 
@@ -81,7 +101,12 @@ public class IndexingService {
                     forkJoinPool.invoke(new PageIndexer(siteEntity, site.getUrl(), 0, depth));
 
                     // Обновляем статус на INDEXED после завершения индексации
-                    siteEntity.setStatus(Status.INDEXED);
+                    if (!stopRequested.get()) {
+                        siteEntity.setStatus(Status.INDEXED);
+                    } else {
+                        siteEntity.setStatus(Status.FAILED);
+                        siteEntity.setLastError("Индексация остановлена пользователем");
+                    }
                 } catch (Exception e) {
                     // Обработка ошибок и обновление статуса на FAILED
                     logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
@@ -113,8 +138,8 @@ public class IndexingService {
 
         @Override
         protected Void compute() {
-            if (depth >= maxDepth || indexedUrls.contains(url)) {
-                return null; // Выход, если достигнута максимальная глубина или URL уже проиндексирован
+            if (stopRequested.get() || depth >= maxDepth || indexedUrls.contains(url)) {
+                return null; // Выход, если остановлено, достигнута максимальная глубина или URL уже проиндексирован
             }
 
             // Проверка, был ли уже проиндексирован данный URL
