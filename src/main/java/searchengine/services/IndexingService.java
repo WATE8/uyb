@@ -6,13 +6,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import searchengine.config.Site;  // Убедитесь, что этот импорт правильный
+import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.model.Page;
 import searchengine.model.SiteBaza;
 import searchengine.model.Status;
-import searchengine.repository.PageRepository; // Импорт репозитория Page
-import searchengine.repository.SiteRepository; // Импорт репозитория Site
+import searchengine.repository.PageRepository;
+import searchengine.repository.SiteRepository;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -21,12 +21,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class IndexingService {
 
-    private static final Logger logger = LoggerFactory.getLogger(IndexingService.class); // Инициализация логгера
+    private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
     private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
     private final SitesList sitesList;
 
-    private final SiteRepository siteRepository; // Добавление репозитория Site
-    private final PageRepository pageRepository; // Добавление репозитория Page
+    private final SiteRepository siteRepository;
+    private final PageRepository pageRepository;
 
     @Autowired
     public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
