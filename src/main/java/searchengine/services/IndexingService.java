@@ -199,7 +199,7 @@ public class IndexingService {
                 }
             } catch (IOException e) {
                 logger.error("Ошибка при извлечении контента с URL: {}", url, e);
-                indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
+                indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500);
             }
             return null;
         }
