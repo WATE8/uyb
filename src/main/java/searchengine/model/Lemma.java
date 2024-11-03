@@ -6,12 +6,15 @@ import lombok.NoArgsConstructor;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 
+@Entity
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class Lemma {
-
+    @Id
     @Min(value = 1, message = "ID леммы должен быть положительным")
     private int id; // ID леммы
 
