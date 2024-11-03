@@ -11,19 +11,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
-import searchengine.model.Lemma; // Импортируйте класс Lemma
 import searchengine.model.Page;
 import searchengine.model.SiteBaza;
 import searchengine.model.Status;
-import searchengine.repository.LemmaRepository; // Импортируйте репозиторий лемм
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
@@ -39,16 +35,14 @@ public class IndexingService {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final LemmaRepository lemmaRepository; // Добавьте репозиторий для лемм
     private final Set<String> indexedUrls = new HashSet<>();
     private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
     @Autowired
-    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository) {
+    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
         this.sitesList = sitesList;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.lemmaRepository = lemmaRepository; // Инициализация репозитория
     }
 
     public boolean isIndexingInProgress() {
@@ -117,6 +111,7 @@ public class IndexingService {
         }
         logger.info("Индексация завершена за {} мс.", System.currentTimeMillis() - startTime);
     }
+
 
     private SiteBaza createSiteEntity(Site site) {
         SiteBaza siteEntity = new SiteBaza();
@@ -225,22 +220,5 @@ public class IndexingService {
         logger.info("Индексация страницы: {}", url);
         logger.info("Заголовок: {}", title);
         logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "..."); // Логирование первых 100 символов содержимого
-
-        // Создание лемм из содержимого страницы
-        String[] words = body.split("\\W+"); // Разбиваем текст на слова
-        Map<String, Integer> frequencyMap = new HashMap<>();
-
-        for (String word : words) {
-            if (!word.isEmpty()) { // Изменено на !word.isEmpty()
-                frequencyMap.put(word, frequencyMap.getOrDefault(word, 0) + 1);
-            }
-        }
-
-        // Сохраняем леммы в базу данных
-        for (Map.Entry<String, Integer> entry : frequencyMap.entrySet()) {
-            Lemma lemma = new Lemma(site, entry.getKey(), entry.getValue()); // Используем конструктор
-            lemmaRepository.save(lemma); // Сохраняем лемму в базе данных
-        }
     }
-
 }
