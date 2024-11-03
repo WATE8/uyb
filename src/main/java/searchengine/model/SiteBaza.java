@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @Entity
 @Table(name = "sites")
@@ -33,4 +34,7 @@ public class SiteBaza {
 
     @Column(nullable = false, length = 255) // Длина имени сайта ограничена 255 символами
     private String name; // Имя сайта
+
+    @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private Set<Lemma> lemmas; // Связь с леммами
 }
