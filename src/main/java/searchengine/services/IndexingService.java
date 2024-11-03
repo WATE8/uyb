@@ -38,16 +38,17 @@ public class IndexingService {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final LemmaRepository lemmaRepository;
+    private final LemmaRepository lemmaRepository; // Объявление переменной для репозитория лемм
     private final Set<String> indexedUrls = new HashSet<>();
     private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
+    // Включаем LemmaRepository в параметры конструктора
     @Autowired
-    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
+    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository) {
         this.sitesList = sitesList;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.lemmaRepository = lemmaRepository;
+        this.lemmaRepository = lemmaRepository; // Инициализация переменной
     }
 
     public boolean isIndexingInProgress() {
@@ -116,7 +117,6 @@ public class IndexingService {
         }
         logger.info("Индексация завершена за {} мс.", System.currentTimeMillis() - startTime);
     }
-
 
     private SiteBaza createSiteEntity(Site site) {
         SiteBaza siteEntity = new SiteBaza();
@@ -210,7 +210,6 @@ public class IndexingService {
         }
     }
 
-
     // Метод для получения всех лемм
     public List<Lemma> findAllLemmas() {
         return lemmaRepository.findAll();
@@ -230,8 +229,6 @@ public class IndexingService {
     public void deleteLemmaById(int id) {
         lemmaRepository.deleteById(id);
     }
-
-
 
     private boolean isValidUrl(String url, String baseUrl) {
         return url.startsWith(baseUrl);
@@ -253,23 +250,40 @@ public class IndexingService {
         indexLemmas(body, site.getId());
     }
 
+
+    @SuppressWarnings("unused")
+    public List<Lemma> searchLemmas(String searchTerm) {
+        return lemmaRepository.findByLemmaContaining(searchTerm);
+    }
+
+    @SuppressWarnings("unused")
+    public List<Lemma> getFrequentLemmas(int minFrequency) {
+        return lemmaRepository.findByFrequencyGreaterThanEqual(minFrequency);
+    }
+
+    @SuppressWarnings("unused")
+    public List<Lemma> findLemmasBySiteId(int siteId) {
+        return lemmaRepository.findBySiteId(siteId);
+    }
+
+
     private void indexLemmas(String content, int siteId) {
         // Простая лемматизация: разбиваем текст на слова
         String[] words = content.split("\\W+"); // Разбиваем текст по не-словесным символам
         for (String word : words) {
             if (word.isEmpty()) continue; // Пропускаем пустые слова
 
-            // Пример леммы (вы можете использовать библиотеку для реальной лемматизации)
+            // Создаем новую лемму
             Lemma lemma = new Lemma();
             lemma.setSiteId(siteId);
             lemma.setLemma(word.toLowerCase()); // Нормальная форма слова
-            lemma.setFrequency(1); // Устанавливаем частоту (можно изменить логику)
+            lemma.setFrequency(1); // Устанавливаем начальную частоту
 
             // Проверка существования леммы
             Lemma existingLemma = lemmaRepository.findByLemma(lemma.getLemma());
             if (existingLemma != null) {
                 // Увеличиваем частоту, если лемма уже существует
-                existingLemma.setFrequency(existingLemma.getFrequency() + 1);
+                existingLemma.updateFrequency(existingLemma.getFrequency() + 1);
                 lemmaRepository.save(existingLemma);
             } else {
                 lemmaRepository.save(lemma); // Сохраняем новую лемму
