@@ -9,7 +9,7 @@ import java.util.List;
 @Repository
 public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
     // Метод для поиска леммы по точному значению
-    Lemma findByLemma(String lemma);
+    List<Lemma> findByLemma(String lemma);
 
     // Метод для поиска лемм по частичному совпадению
     List<Lemma> findByLemmaContaining(String lemmaPart);
@@ -19,4 +19,6 @@ public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
 
     // Метод для поиска лемм по ID сайта
     List<Lemma> findBySiteId(int siteId);
+
+
 }

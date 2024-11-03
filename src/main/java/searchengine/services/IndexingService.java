@@ -18,6 +18,8 @@ import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.repository.LemmaRepository;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -268,27 +270,48 @@ public class IndexingService {
 
 
     private void indexLemmas(String content, int siteId) {
-        // Простая лемматизация: разбиваем текст на слова
-        String[] words = content.split("\\W+"); // Разбиваем текст по не-словесным символам
-        for (String word : words) {
-            if (word.isEmpty()) continue; // Пропускаем пустые слова
+        Map<String, Integer> lemmaFrequencyMap = createLemmaFrequencyMap(content); // Extracted method
 
-            // Создаем новую лемму
-            Lemma lemma = new Lemma();
-            lemma.setSiteId(siteId);
-            lemma.setLemma(word.toLowerCase()); // Нормальная форма слова
-            lemma.setFrequency(1); // Устанавливаем начальную частоту
+        // Update existing lemmas and create new ones
+        for (Map.Entry<String, Integer> entry : lemmaFrequencyMap.entrySet()) {
+            String lemmaText = entry.getKey();
+            int frequency = entry.getValue();
 
-            // Проверка существования леммы
-            Lemma existingLemma = lemmaRepository.findByLemma(lemma.getLemma());
-            if (existingLemma != null) {
-                // Увеличиваем частоту, если лемма уже существует
-                existingLemma.updateFrequency(existingLemma.getFrequency() + 1);
-                lemmaRepository.save(existingLemma);
+            List<Lemma> existingLemmas = lemmaRepository.findByLemma(lemmaText); // Get existing lemmas
+
+            // If existing lemmas are found, update the first one
+            if (!existingLemmas.isEmpty()) {
+                Lemma existingLemma = existingLemmas.get(0); // Take the first found lemma
+                existingLemma.setFrequency(existingLemma.getFrequency() + frequency); // Update frequency
+                lemmaRepository.save(existingLemma); // Save the updated lemma
             } else {
-                lemmaRepository.save(lemma); // Сохраняем новую лемму
+                // Create a new lemma if none exists
+                Lemma newLemma = new Lemma();
+                newLemma.setSiteId(siteId);
+                newLemma.setLemma(lemmaText); // Set the normalized form
+                newLemma.setFrequency(frequency); // Set the frequency
+                lemmaRepository.save(newLemma); // Save the new lemma
             }
         }
     }
+
+    // New method to create the lemma frequency map
+    private Map<String, Integer> createLemmaFrequencyMap(String content) {
+        String[] words = content.split("\\W+"); // Split text by non-word characters
+        Map<String, Integer> lemmaFrequencyMap = new HashMap<>(); // Map to store lemma frequencies
+
+        // Populate the frequency map
+        for (String word : words) {
+            if (word.isEmpty()) continue; // Skip empty words
+
+            String lemmaText = word.toLowerCase(); // Normalize the word
+            lemmaFrequencyMap.put(lemmaText, lemmaFrequencyMap.getOrDefault(lemmaText, 0) + 1); // Increment frequency
+        }
+
+        return lemmaFrequencyMap; // Return the populated frequency map
+    }
+
+
+
 
 }
