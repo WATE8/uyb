@@ -99,11 +99,19 @@ public class IndexingService {
                 } finally {
                     siteRepository.save(siteEntity);
                     logSiteIndexingDuration(site.getUrl(), siteStartTime);
+                    try {
+                        // Задержка перед следующим запросом
+                        Thread.sleep(1000); // Задержка 1 секунда (можно настроить)
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt(); // Восстановить прерывание
+                        logger.warn("Задержка прервана");
+                    }
                 }
             });
         }
         logger.info("Индексация завершена за {} мс.", System.currentTimeMillis() - startTime);
     }
+
 
     private SiteBaza createSiteEntity(Site site) {
         SiteBaza siteEntity = new SiteBaza();
@@ -126,7 +134,6 @@ public class IndexingService {
         logger.info("Индексация сайта {} завершена за {} мс", url, siteDuration);
     }
 
-
     private class PageIndexer extends RecursiveTask<Void> {
         private final SiteBaza site;
         private final String url;
@@ -147,49 +154,52 @@ public class IndexingService {
             }
 
             // Проверка на существование страницы по пути
-            if (pageRepository.findByPath(url) == null) { // Используем findByPath
-                indexedUrls.add(url);
+            Page existingPage = pageRepository.findByPath(url); // Используем findByPath
+            if (existingPage != null) {
+                // Если страница уже проиндексирована, удаляем ее
+                pageRepository.delete(existingPage);
+                logger.info("Существующая индексация удалена для URL: {}", url);
+            }
 
-                try {
-                    // Обновляем время статуса перед началом обработки страницы
-                    site.setStatusTime(LocalDateTime.now());
-                    siteRepository.save(site); // Обновляем статус времени
+            indexedUrls.add(url);
 
-                    // Используем фейковый User-Agent и referrer
-                    Connection.Response response = Jsoup.connect(url)
-                            .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                            .referrer("http://www.google.com")
-                            .execute();
+            try {
+                // Обновляем время статуса перед началом обработки страницы
+                site.setStatusTime(LocalDateTime.now());
+                siteRepository.save(site); // Обновляем статус времени
 
-                    String contentType = response.contentType();
-                    if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
-                        logger.warn("Некорректный тип контента для URL: {}", url);
-                        return null;
-                    }
+                // Используем фейковый User-Agent и referrer
+                Connection.Response response = Jsoup.connect(url)
+                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
+                        .referrer("http://www.google.com")
+                        .execute();
 
-                    Document document = response.parse();
-                    String title = document.title();
-                    String body = document.body().text();
-
-                    // Индексация содержимого страницы с установкой статуса
-                    indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
-
-                    // Извлечение ссылок и создание новых задач для каждой ссылки
-                    Elements links = document.select("a[href]");
-                    for (Element link : links) {
-                        String absUrl = link.absUrl("href");
-                        if (isValidUrl(absUrl, site.getUrl())) {
-                            // Создаем новую задачу для каждой ссылки
-                            PageIndexer subTask = new PageIndexer(site, absUrl, depth + 1, maxDepth);
-                            subTask.fork(); // Запускаем задачу
-                        }
-                    }
-                } catch (IOException e) {
-                    logger.error("Ошибка при извлечении контента с URL: {}", url, e);
-                    indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
+                String contentType = response.contentType();
+                if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
+                    logger.warn("Некорректный тип контента для URL: {}", url);
+                    return null;
                 }
-            } else {
-                logger.info("URL уже проиндексирован: {}", url);
+
+                Document document = response.parse();
+                String title = document.title();
+                String body = document.body().text();
+
+                // Индексация содержимого страницы с установкой статуса
+                indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
+
+                // Извлечение ссылок и создание новых задач для каждой ссылки
+                Elements links = document.select("a[href]");
+                for (Element link : links) {
+                    String absUrl = link.absUrl("href");
+                    if (isValidUrl(absUrl, site.getUrl())) {
+                        // Создаем новую задачу для каждой ссылки
+                        PageIndexer subTask = new PageIndexer(site, absUrl, depth + 1, maxDepth);
+                        subTask.fork(); // Запускаем задачу
+                    }
+                }
+            } catch (IOException e) {
+                logger.error("Ошибка при извлечении контента с URL: {}", url, e);
+                indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
             }
             return null;
         }
