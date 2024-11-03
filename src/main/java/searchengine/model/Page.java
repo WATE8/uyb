@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "pages", indexes = @Index(name = "path_index", columnList = "path")) // Индекс на поле path
+@Table(name = "pages", indexes = @Index(name = "path_index", columnList = "path")) // Correct index definition
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -142,51 +142,50 @@ public class IndexingService {
                 return null; // Выход, если остановлено, достигнута максимальная глубина или URL уже проиндексирован
             }
 
-            // Проверка, был ли уже проиндексирован данный URL
-            if (pageRepository.findByPath(url) != null) {
-                logger.info("URL уже проиндексирован: {}", url);
-                return null; // Выход, если URL уже проиндексирован
-            }
+            // Проверка на существование страницы по пути
+            if (pageRepository.findByPath(url) == null) { // Используем findByPath
+                indexedUrls.add(url);
 
-            indexedUrls.add(url);
+                try {
+                    // Обновляем время статуса перед началом обработки страницы
+                    site.setStatusTime(LocalDateTime.now());
+                    siteRepository.save(site); // Обновляем статус времени
 
-            try {
-                // Обновляем время статуса перед началом обработки страницы
-                site.setStatusTime(LocalDateTime.now());
-                siteRepository.save(site); // Обновляем статус времени
+                    // Используем фейковый User-Agent и referrer
+                    Connection.Response response = Jsoup.connect(url)
+                            .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
+                            .referrer("http://www.google.com")
+                            .execute();
 
-                // Используем фейковый User-Agent и referrer
-                Connection.Response response = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                        .referrer("http://www.google.com")
-                        .execute();
-
-                String contentType = response.contentType();
-                if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
-                    logger.warn("Некорректный тип контента для URL: {}", url);
-                    return null;
-                }
-
-                Document document = response.parse();
-                String title = document.title();
-                String body = document.body().text();
-
-                // Индексация содержимого страницы с установкой статуса
-                indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
-
-                // Извлечение ссылок и создание новых задач для каждой ссылки
-                Elements links = document.select("a[href]");
-                for (Element link : links) {
-                    String absUrl = link.absUrl("href");
-                    if (isValidUrl(absUrl, site.getUrl())) {
-                        // Создаем новую задачу для каждой ссылки
-                        PageIndexer subTask = new PageIndexer(site, absUrl, depth + 1, maxDepth);
-                        subTask.fork(); // Запускаем задачу
+                    String contentType = response.contentType();
+                    if (contentType == null || (!contentType.startsWith("text/") && !contentType.startsWith("application/xml"))) {
+                        logger.warn("Некорректный тип контента для URL: {}", url);
+                        return null;
                     }
+
+                    Document document = response.parse();
+                    String title = document.title();
+                    String body = document.body().text();
+
+                    // Индексация содержимого страницы с установкой статуса
+                    indexContent(site, title, body, url, 200); // Устанавливаем код состояния 200
+
+                    // Извлечение ссылок и создание новых задач для каждой ссылки
+                    Elements links = document.select("a[href]");
+                    for (Element link : links) {
+                        String absUrl = link.absUrl("href");
+                        if (isValidUrl(absUrl, site.getUrl())) {
+                            // Создаем новую задачу для каждой ссылки
+                            PageIndexer subTask = new PageIndexer(site, absUrl, depth + 1, maxDepth);
+                            subTask.fork(); // Запускаем задачу
+                        }
+                    }
+                } catch (IOException e) {
+                    logger.error("Ошибка при извлечении контента с URL: {}", url, e);
+                    indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
                 }
-            } catch (IOException e) {
-                logger.error("Ошибка при извлечении контента с URL: {}", url, e);
-                indexContent(site, "Ошибка", "Ошибка при извлечении содержимого", url, 500); // Код ошибки
+            } else {
+                logger.info("URL уже проиндексирован: {}", url);
             }
             return null;
         }
@@ -206,6 +205,6 @@ public class IndexingService {
         pageRepository.save(page); // Сохранение страницы в базе данных
         logger.info("Индексация страницы: {}", url);
         logger.info("Заголовок: {}", title);
-        logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "...");
+        logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "..."); // Логирование первых 100 символов содержимого
     }
 }
