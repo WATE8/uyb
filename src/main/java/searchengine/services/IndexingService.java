@@ -86,42 +86,46 @@ public class IndexingService {
     private void performIndexing(int depth) {
         long startTime = System.currentTimeMillis();
         for (Site site : sitesList.getSites()) {
-            // Запускаем обход сайта в отдельном потоке
             forkJoinPool.execute(() -> {
                 long siteStartTime = System.currentTimeMillis();
-                SiteBaza siteEntity = new SiteBaza();
-                siteEntity.setUrl(site.getUrl());
-                siteEntity.setName(site.getName());
-                siteEntity.setStatus(Status.INDEXING);  // Устанавливаем статус INDEXING
-                siteEntity.setStatusTime(LocalDateTime.now());
-                siteRepository.save(siteEntity); // Сохраняем начальный статус
+                SiteBaza siteEntity = createSiteEntity(site);
 
                 try {
-                    // Запуск индексации страницы с учетом глубины
                     forkJoinPool.invoke(new PageIndexer(siteEntity, site.getUrl(), 0, depth));
-
-                    // Обновляем статус на INDEXED после завершения индексации
-                    if (!stopRequested.get()) {
-                        siteEntity.setStatus(Status.INDEXED);
-                    } else {
-                        siteEntity.setStatus(Status.FAILED);
-                        siteEntity.setLastError("Индексация остановлена пользователем");
-                    }
+                    updateSiteStatus(siteEntity, Status.INDEXED, null);
                 } catch (Exception e) {
-                    // Обработка ошибок и обновление статуса на FAILED
                     logger.error("Ошибка при извлечении контента с сайта: {}", site.getUrl(), e);
-                    siteEntity.setStatus(Status.FAILED);
-                    siteEntity.setLastError("Ошибка индексации: " + e.getMessage());
+                    updateSiteStatus(siteEntity, Status.FAILED, "Ошибка индексации: " + e.getMessage());
                 } finally {
-                    siteRepository.save(siteEntity); // Обновление записи сайта в любом случае
-                    long siteDuration = System.currentTimeMillis() - siteStartTime;
-                    logger.info("Индексация сайта {} завершена за {} мс", site.getUrl(), siteDuration);
+                    siteRepository.save(siteEntity);
+                    logSiteIndexingDuration(site.getUrl(), siteStartTime);
                 }
             });
         }
-        long totalDuration = System.currentTimeMillis() - startTime;
-        logger.info("Индексация завершена за {} мс.", totalDuration);
+        logger.info("Индексация завершена за {} мс.", System.currentTimeMillis() - startTime);
     }
+
+    private SiteBaza createSiteEntity(Site site) {
+        SiteBaza siteEntity = new SiteBaza();
+        siteEntity.setUrl(site.getUrl());
+        siteEntity.setName(site.getName());
+        siteEntity.setStatus(Status.INDEXING);
+        siteEntity.setStatusTime(LocalDateTime.now());
+        siteRepository.save(siteEntity); // Сохраняем начальный статус
+        return siteEntity;
+    }
+
+    private void updateSiteStatus(SiteBaza siteEntity, Status status, String error) {
+        siteEntity.setStatus(status);
+        siteEntity.setLastError(error);
+        siteRepository.save(siteEntity);
+    }
+
+    private void logSiteIndexingDuration(String url, long startTime) {
+        long siteDuration = System.currentTimeMillis() - startTime;
+        logger.info("Индексация сайта {} завершена за {} мс", url, siteDuration);
+    }
+
 
     private class PageIndexer extends RecursiveTask<Void> {
         private final SiteBaza site;
