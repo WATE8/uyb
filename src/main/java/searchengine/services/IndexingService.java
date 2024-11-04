@@ -16,11 +16,7 @@ import searchengine.model.SiteBaza;
 import searchengine.model.Status;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import searchengine.repository.LemmaRepository;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.List;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -28,7 +24,6 @@ import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
 import java.util.concurrent.atomic.AtomicBoolean;
-import searchengine.model.Lemma;
 
 @Service
 public class IndexingService {
@@ -40,17 +35,14 @@ public class IndexingService {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final LemmaRepository lemmaRepository; // Объявление переменной для репозитория лемм
     private final Set<String> indexedUrls = new HashSet<>();
     private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
-    // Включаем LemmaRepository в параметры конструктора
     @Autowired
-    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository) {
+    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
         this.sitesList = sitesList;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.lemmaRepository = lemmaRepository; // Инициализация переменной
     }
 
     public boolean isIndexingInProgress() {
@@ -119,6 +111,7 @@ public class IndexingService {
         }
         logger.info("Индексация завершена за {} мс.", System.currentTimeMillis() - startTime);
     }
+
 
     private SiteBaza createSiteEntity(Site site) {
         SiteBaza siteEntity = new SiteBaza();
@@ -212,26 +205,6 @@ public class IndexingService {
         }
     }
 
-    // Метод для получения всех лемм
-    public List<Lemma> findAllLemmas() {
-        return lemmaRepository.findAll();
-    }
-
-    // Метод для получения леммы по ID
-    public Lemma findLemmaById(int id) {
-        return lemmaRepository.findById(id).orElse(null);
-    }
-
-    // Метод для создания новой леммы
-    public Lemma createLemma(Lemma lemma) {
-        return lemmaRepository.save(lemma);
-    }
-
-    // Метод для удаления леммы по ID
-    public void deleteLemmaById(int id) {
-        lemmaRepository.deleteById(id);
-    }
-
     private boolean isValidUrl(String url, String baseUrl) {
         return url.startsWith(baseUrl);
     }
@@ -247,71 +220,5 @@ public class IndexingService {
         logger.info("Индексация страницы: {}", url);
         logger.info("Заголовок: {}", title);
         logger.info("Содержимое: {}", body.substring(0, Math.min(body.length(), 100)) + "..."); // Логирование первых 100 символов содержимого
-
-        // Индексация лемм из текста
-        indexLemmas(body, site.getId());
     }
-
-
-    @SuppressWarnings("unused")
-    public List<Lemma> searchLemmas(String searchTerm) {
-        return lemmaRepository.findByLemmaContaining(searchTerm);
-    }
-
-    @SuppressWarnings("unused")
-    public List<Lemma> getFrequentLemmas(int minFrequency) {
-        return lemmaRepository.findByFrequencyGreaterThanEqual(minFrequency);
-    }
-
-    @SuppressWarnings("unused")
-    public List<Lemma> findLemmasBySiteId(int siteId) {
-        return lemmaRepository.findBySiteId(siteId);
-    }
-
-
-    private void indexLemmas(String content, int siteId) {
-        Map<String, Integer> lemmaFrequencyMap = createLemmaFrequencyMap(content); // Extracted method
-
-        // Update existing lemmas and create new ones
-        for (Map.Entry<String, Integer> entry : lemmaFrequencyMap.entrySet()) {
-            String lemmaText = entry.getKey();
-            int frequency = entry.getValue();
-
-            List<Lemma> existingLemmas = lemmaRepository.findByLemma(lemmaText); // Get existing lemmas
-
-            // If existing lemmas are found, update the first one
-            if (!existingLemmas.isEmpty()) {
-                Lemma existingLemma = existingLemmas.get(0); // Take the first found lemma
-                existingLemma.setFrequency(existingLemma.getFrequency() + frequency); // Update frequency
-                lemmaRepository.save(existingLemma); // Save the updated lemma
-            } else {
-                // Create a new lemma if none exists
-                Lemma newLemma = new Lemma();
-                newLemma.setSiteId(siteId);
-                newLemma.setLemma(lemmaText); // Set the normalized form
-                newLemma.setFrequency(frequency); // Set the frequency
-                lemmaRepository.save(newLemma); // Save the new lemma
-            }
-        }
-    }
-
-    // New method to create the lemma frequency map
-    private Map<String, Integer> createLemmaFrequencyMap(String content) {
-        String[] words = content.split("\\W+"); // Split text by non-word characters
-        Map<String, Integer> lemmaFrequencyMap = new HashMap<>(); // Map to store lemma frequencies
-
-        // Populate the frequency map
-        for (String word : words) {
-            if (word.isEmpty()) continue; // Skip empty words
-
-            String lemmaText = word.toLowerCase(); // Normalize the word
-            lemmaFrequencyMap.put(lemmaText, lemmaFrequencyMap.getOrDefault(lemmaText, 0) + 1); // Increment frequency
-        }
-
-        return lemmaFrequencyMap; // Return the populated frequency map
-    }
-
-
-
-
 }
