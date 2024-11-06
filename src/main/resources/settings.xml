@@ -10,8 +10,7 @@
                 <httpHeaders>
                     <property>
                         <name>Private-Token</name>
-                        <value>токен
-                        </value>
+                        <value></value>
                     </property>
                 </httpHeaders>
             </configuration>
