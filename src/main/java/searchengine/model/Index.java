@@ -11,7 +11,7 @@ import lombok.experimental.Accessors;
 @NoArgsConstructor
 @Accessors(chain = true) // Устанавливает методы fluent-style
 @Entity
-@Table(name = "index")
+@Table(name = "'index'")
 public class Index {
 
     @Id
@@ -25,7 +25,7 @@ public class Index {
     private Integer lemmaId;
 
     @Setter(AccessLevel.NONE) // Отключение автогенерации сеттера для rank
-    @Column(name = "rank", nullable = false)
+    @Column(name = "'rank'", nullable = false)
     private Float rank;
 
     // Метод с проверкой
