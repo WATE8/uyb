@@ -16,6 +16,25 @@ public class Lemmatizer {
         morphology = new RussianLuceneMorphology();
     }
 
+    // Метод для фильтрации служебных частей речи
+    private boolean isStopPartOfSpeech(String word) {
+        try {
+            // Получаем информацию о частях речи для слова
+            List<String> morphInfo = morphology.getMorphInfo(word);
+
+            // Проверяем, если слово является служебной частью речи (например, союз, предлог, междометие)
+            for (String info : morphInfo) {
+                // Если слово является союзом, предлогом или междометием, то пропускаем его
+                if (info.contains("СОЮЗ") || info.contains("МЕЖД") || info.contains("ПРЕДЛОГ")) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
     // Метод для лемматизации текста с подсчётом частот лемм
     public HashMap<String, Integer> getLemmas(String text) {
         HashMap<String, Integer> lemmasCount = new HashMap<>();
@@ -24,8 +43,8 @@ public class Lemmatizer {
         for (String word : text.split("\\P{IsAlphabetic}+")) {
             word = word.toLowerCase(); // Приводим слово к нижнему регистру
 
-            // Пропускаем стоп-слова или пустые строки
-            if (word.isEmpty() || STOP_WORDS.contains(word)) {
+            // Пропускаем стоп-слова, служебные части речи или пустые строки
+            if (word.isEmpty() || STOP_WORDS.contains(word) || isStopPartOfSpeech(word)) {
                 continue;
             }
 
