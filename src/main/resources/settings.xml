@@ -10,7 +10,8 @@
                 <httpHeaders>
                     <property>
                         <name>Private-Token</name>
-                        <value>token</value>
+                        <value>glpat-Viu1C6oUSddYB3JdKviW
+                        </value>
                     </property>
                 </httpHeaders>
             </configuration>
