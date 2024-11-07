@@ -16,6 +16,9 @@ spring:
     show-sql: true
 
 indexing-settings:
+  allowed-domains:
+    - "volochek.life"
+    - "playback.ru"
   sites:
     - url: "https://volochek.life"
       name: "Volochek Life"

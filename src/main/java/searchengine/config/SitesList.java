@@ -12,5 +12,6 @@ import java.util.List;
 @Component
 @ConfigurationProperties(prefix = "indexing-settings")
 public class SitesList {
-    private List<Site> sites;
+    private List<String> allowedDomains; // Список разрешённых доменов
+    private List<Site> sites;            // Список сайтов для индексации
 }
