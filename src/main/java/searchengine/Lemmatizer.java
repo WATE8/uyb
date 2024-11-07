@@ -2,10 +2,14 @@ package searchengine;
 
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.jsoup.Jsoup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 public class Lemmatizer {
+    private static final Logger logger = LoggerFactory.getLogger(Lemmatizer.class); // Создание логгера
     private static final Set<String> STOP_WORDS = Set.of(
             "и", "в", "на", "с", "у", "от", "по", "а", "но", "для", "без", "при", "до", "ни", "же", "или", "да", "то", "как", "к", "о", "об", "чтобы", "за", "что"
     );
@@ -30,7 +34,8 @@ public class Lemmatizer {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            // Логируем ошибку с полным стеком
+            logger.error("Ошибка при анализе части речи для слова '{}': {}", word, e.getMessage(), e);
         }
         return false;
     }
@@ -67,6 +72,12 @@ public class Lemmatizer {
         return morphology.getNormalForms(word.toLowerCase());
     }
 
+    // Метод для очистки HTML-тегов
+    public String removeHtmlTags(String html) {
+        // Используем jsoup для очистки HTML-контента
+        return Jsoup.parse(html).text();
+    }
+
     public static void main(String[] args) {
         try {
             Lemmatizer lemmatizer = new Lemmatizer();
@@ -85,8 +96,18 @@ public class Lemmatizer {
             // Выводим результаты
             System.out.println("\nЛеммы и их частоты в тексте:");
             result.forEach((lemma, count) -> System.out.println(lemma + " — " + count));
+
+            // Пример текста с HTML-тегами
+            String htmlText = "<html><body><h1>Привет, мир!</h1><p>Это тестовый <b>текст</b> с <i>HTML</i> тегами.</p></body></html>";
+
+            // Очищаем текст от HTML-тегов
+            String cleanText = lemmatizer.removeHtmlTags(htmlText);
+            System.out.println("\nТекст без HTML-тегов:");
+            System.out.println(cleanText);
+
         } catch (Exception e) {
-            System.err.println("Ошибка при лемматизации: " + e.getMessage());
+            // Логируем ошибку, если что-то пошло не так
+            logger.error("Ошибка при выполнении программы: {}", e.getMessage(), e);
         }
     }
 }
