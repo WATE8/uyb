@@ -8,14 +8,14 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
-public class Lemmatizer {
-    private static final Logger logger = LoggerFactory.getLogger(Lemmatizer.class); // Создание логгера
+public class Tesst {
+    private static final Logger logger = LoggerFactory.getLogger(Tesst.class); // Создание логгера
     private static final Set<String> STOP_WORDS = Set.of(
             "и", "в", "на", "с", "у", "от", "по", "а", "но", "для", "без", "при", "до", "ни", "же", "или", "да", "то", "как", "к", "о", "об", "чтобы", "за", "что"
     );
     private final LuceneMorphology morphology;
 
-    public Lemmatizer() throws Exception {
+    public Tesst() throws Exception {
         // Инициализация LuceneMorphology для работы с русским языком
         morphology = new RussianLuceneMorphology();
     }
@@ -80,7 +80,7 @@ public class Lemmatizer {
 
     public static void main(String[] args) {
         try {
-            Lemmatizer lemmatizer = new Lemmatizer();
+            Tesst lemmatizer = new Tesst();
 
             // Лемматизация одного слова (например, "леса")
             System.out.println("Леммы для слова 'леса':");
