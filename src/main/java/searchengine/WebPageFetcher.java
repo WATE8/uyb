@@ -15,7 +15,7 @@ import java.util.Map;
 public class WebPageFetcher {
 
     private static final Logger logger = LoggerFactory.getLogger(WebPageFetcher.class);
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine"; // Используем MySQL
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine";
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = "asuzncmi666";
 
@@ -45,32 +45,14 @@ public class WebPageFetcher {
             logger.info("Заголовок страницы: {}", title);
             logger.info("Описание страницы: {}", description);
 
-            // Преобразуем контент в леммы и их частоты
-            Map<String, Integer> lemmas = extractLemmas(title + " " + description);
-
-            savePageToDatabase(url, title, description, lemmas);
+            savePageToDatabase(url, title, description);
 
         } catch (IOException e) {
             logger.error("Ошибка при загрузке страницы: {}", url, e);
         }
     }
 
-    private static Map<String, Integer> extractLemmas(String content) {
-        // Используем простую лемматизацию с разделением по пробелам. Замените это на более сложное решение, если нужно.
-        Map<String, Integer> lemmaMap = new HashMap<>();
-        String[] words = content.split("\\s+");
-
-        for (String word : words) {
-            word = word.toLowerCase().replaceAll("[^a-zа-я]", ""); // Очистка от небуквенных символов
-            if (!word.isEmpty()) {
-                lemmaMap.put(word, lemmaMap.getOrDefault(word, 0) + 1);
-            }
-        }
-
-        return lemmaMap;
-    }
-
-    private static void savePageToDatabase(String url, String title, String description, Map<String, Integer> lemmas) {
+    private static void savePageToDatabase(String url, String title, String description) {
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
             conn.setAutoCommit(false);
 
@@ -79,17 +61,20 @@ public class WebPageFetcher {
 
             if (!isPageExist(conn, siteId, path)) {
                 String insertPageSQL = "INSERT INTO page (site_id, path, content) VALUES (?, ?, ?)";
-                try (PreparedStatement stmt = conn.prepareStatement(insertPageSQL)) {
+                try (PreparedStatement stmt = conn.prepareStatement(insertPageSQL, Statement.RETURN_GENERATED_KEYS)) {
                     stmt.setInt(1, siteId);
                     stmt.setString(2, path);
-                    stmt.setString(3, title + " " + description); // Сохраняем title и description
+                    stmt.setString(3, title + " " + description);
                     stmt.executeUpdate();
+                    ResultSet generatedKeys = stmt.getGeneratedKeys();
+                    if (generatedKeys.next()) {
+                        int pageId = generatedKeys.getInt(1);
+                        logger.info("Страница успешно сохранена в базу данных: {}", url);
+
+                        // Теперь сохраняем леммы для этой страницы
+                        saveLemmasForPage(conn, pageId, title + " " + description);
+                    }
                     conn.commit();
-                    logger.info("Страница успешно сохранена в базу данных: {}", url);
-
-                    // Сохраняем леммы
-                    saveLemmasToDatabase(conn, siteId, path, lemmas);
-
                 } catch (SQLException e) {
                     conn.rollback();
                     logger.error("Ошибка при вставке данных в таблицу page. Транзакция откатывается.", e);
@@ -102,24 +87,68 @@ public class WebPageFetcher {
         }
     }
 
-    private static void saveLemmasToDatabase(Connection conn, int siteId, String path, Map<String, Integer> lemmas) throws SQLException {
-        String selectPageSQL = "SELECT id FROM page WHERE site_id = ? AND path = ?";
-        try (PreparedStatement selectStmt = conn.prepareStatement(selectPageSQL)) {
-            selectStmt.setInt(1, siteId);
-            selectStmt.setString(2, path);
-            try (ResultSet rs = selectStmt.executeQuery()) {
+    private static void saveLemmasForPage(Connection conn, int pageId, String text) {
+        // Разбиваем текст на леммы и считаем их частоты
+        Map<String, Integer> lemmaFrequency = getLemmaFrequencies(text);
+
+        try {
+            for (Map.Entry<String, Integer> entry : lemmaFrequency.entrySet()) {
+                String lemma = entry.getKey();
+                int frequency = entry.getValue();
+
+                // Получаем или создаем лемму в таблице `lemma`
+                int lemmaId = getOrCreateLemmaId(conn, lemma);
+
+                // Добавляем запись в таблицу `index`
+                String insertIndexSQL = "INSERT INTO `index` (page_id, lemma_id, frequency) VALUES (?, ?, ?)";
+                try (PreparedStatement stmt = conn.prepareStatement(insertIndexSQL)) {
+                    stmt.setInt(1, pageId);
+                    stmt.setInt(2, lemmaId);
+                    stmt.setInt(3, frequency);
+                    stmt.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("Ошибка при сохранении лемм в таблицу index: ", e);
+        }
+    }
+
+    private static Map<String, Integer> getLemmaFrequencies(String text) {
+        // Преобразуем текст в леммы и подсчитываем их частоты
+        Map<String, Integer> lemmaFrequency = new HashMap<>();
+        String[] words = text.split("\\W+");
+
+        for (String word : words) {
+            word = word.toLowerCase();  // Приводим все слова к нижнему регистру
+            if (!word.isEmpty()) {
+                lemmaFrequency.put(word, lemmaFrequency.getOrDefault(word, 0) + 1);
+            }
+        }
+        return lemmaFrequency;
+    }
+
+    private static int getOrCreateLemmaId(Connection conn, String lemma) throws SQLException {
+        // Проверяем, существует ли лемма в базе данных
+        String selectLemmaSQL = "SELECT id FROM lemma WHERE lemma = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(selectLemmaSQL)) {
+            stmt.setString(1, lemma);
+            try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    int pageId = rs.getInt("id");
-                    // Теперь сохраняем леммы для этой страницы
-                    for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
-                        String insertLemmaSQL = "INSERT INTO lemma (page_id, lemma, frequency) VALUES (?, ?, ?)";
-                        try (PreparedStatement insertStmt = conn.prepareStatement(insertLemmaSQL)) {
-                            insertStmt.setInt(1, pageId);
-                            insertStmt.setString(2, entry.getKey());
-                            insertStmt.setInt(3, entry.getValue());
-                            insertStmt.executeUpdate();
-                        }
-                    }
+                    return rs.getInt("id");
+                }
+            }
+        }
+
+        // Если лемма не существует, создаем новую
+        String insertLemmaSQL = "INSERT INTO lemma (lemma) VALUES (?)";
+        try (PreparedStatement stmt = conn.prepareStatement(insertLemmaSQL, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, lemma);
+            stmt.executeUpdate();
+            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    return generatedKeys.getInt(1);
+                } else {
+                    throw new SQLException("Не удалось создать запись для новой леммы.");
                 }
             }
         }
@@ -156,7 +185,7 @@ public class WebPageFetcher {
         String insertSiteSQL = "INSERT INTO site (domain, name) VALUES (?, ?)";
         try (PreparedStatement insertStmt = conn.prepareStatement(insertSiteSQL, Statement.RETURN_GENERATED_KEYS)) {
             insertStmt.setString(1, domain);
-            insertStmt.setString(2, domain); // Используем domain как name
+            insertStmt.setString(2, domain);
             insertStmt.executeUpdate();
             try (ResultSet generatedKeys = insertStmt.getGeneratedKeys()) {
                 if (generatedKeys.next()) {
@@ -181,7 +210,7 @@ public class WebPageFetcher {
     private static String getRelativePath(String url) {
         String domain = getDomainFromUrl(url);
         String path = url.replaceFirst("^(https?://)?(www\\.)?" + domain, "");
-        return path.startsWith("/") ? path.substring(1) : path; // Убираем начальный слэш, если он есть
+        return path.startsWith("/") ? path.substring(1) : path;
     }
 
     private static boolean isValidUrl(String url) {
