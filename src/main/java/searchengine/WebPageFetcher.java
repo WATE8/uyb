@@ -18,6 +18,7 @@ public class WebPageFetcher {
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = "asuzncmi666";
 
+    // Метод для извлечения титула и описания страницы
     public static void extractTitleAndDescription(String url) {
         if (!isValidUrl(url)) {
             logger.error("Невалидный URL: {}", url);
@@ -51,6 +52,7 @@ public class WebPageFetcher {
         }
     }
 
+    // Метод для сохранения страницы в базу данных
     private static void savePageToDatabase(String url, String title, String description) {
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
             conn.setAutoCommit(false);
@@ -204,7 +206,7 @@ public class WebPageFetcher {
         }
     }
 
-
+    // Метод для извлечения лемм и их частоты из текста
     private static Map<String, Integer> extractLemmasAndFrequency(String text) {
         Map<String, Integer> frequencyMap = new HashMap<>();
         String[] words = text.split("\\W+");
@@ -217,6 +219,7 @@ public class WebPageFetcher {
         return frequencyMap;
     }
 
+    // Получение домена из URL
     private static String getDomainFromUrl(String url) {
         try {
             URL parsedUrl = new URL(url);
@@ -227,23 +230,36 @@ public class WebPageFetcher {
         }
     }
 
+    // Получение относительного пути из URL
     private static String getRelativePath(String url) {
-        String domain = getDomainFromUrl(url);
-        String path = url.replaceFirst("^(https?://)?(www\\.)?" + domain, "");
-        return path.startsWith("/") ? path.substring(1) : path;
+        try {
+            URL parsedUrl = new URL(url);
+            return parsedUrl.getPath();
+        } catch (MalformedURLException e) {
+            logger.error("Ошибка при разборе URL: {}", url, e);
+            return "";
+        }
     }
 
+    // Метод для проверки валидности URL
     private static boolean isValidUrl(String url) {
-        String regex = "^(https?://)?[\\w.-]+(\\.[a-z]{2,})+.*$";
-        return url.matches(regex);
+        try {
+            new URL(url).toURI();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
+    // Основной метод
     public static void main(String[] args) {
+        // Пример URL-ов для тестирования
         String[] urls = {
                 "http://www.playback.ru",
                 "https://volochek.life"
         };
 
+        // Итерация по URL и извлечение информации
         for (String url : urls) {
             logger.info("Получение информации для: {}", url);
             extractTitleAndDescription(url);
