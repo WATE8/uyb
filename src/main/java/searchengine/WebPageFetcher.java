@@ -9,11 +9,12 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.sql.*;
+import java.util.*;
 
 public class WebPageFetcher {
 
     private static final Logger logger = LoggerFactory.getLogger(WebPageFetcher.class);
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine"; // Используем MySQL
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine";
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = "asuzncmi666";
 
@@ -57,23 +58,14 @@ public class WebPageFetcher {
             int siteId = getOrCreateSiteId(conn, url);
             String path = getRelativePath(url);
 
+            // Проверка, существует ли страница
             if (!isPageExist(conn, siteId, path)) {
                 String insertPageSQL = "INSERT INTO page (site_id, path, content) VALUES (?, ?, ?)";
-                try (PreparedStatement stmt = conn.prepareStatement(insertPageSQL, Statement.RETURN_GENERATED_KEYS)) {
+                try (PreparedStatement stmt = conn.prepareStatement(insertPageSQL)) {
                     stmt.setInt(1, siteId);
                     stmt.setString(2, path);
                     stmt.setString(3, title + " " + description);
                     stmt.executeUpdate();
-
-                    ResultSet rs = stmt.getGeneratedKeys();
-                    int pageId = -1;
-                    if (rs.next()) {
-                        pageId = rs.getInt(1);
-                    }
-
-                    // Обрабатываем леммы для сохранения в таблицы lemma и index
-                    processLemmas(title + " " + description, pageId);
-
                     conn.commit();
                     logger.info("Страница успешно сохранена в базу данных: {}", url);
                 } catch (SQLException e) {
@@ -83,11 +75,23 @@ public class WebPageFetcher {
             } else {
                 logger.info("Страница уже существует в базе данных: {}", url);
             }
+
+            int pageId = getPageId(conn, siteId, path);
+            Map<String, Integer> lemmaFrequencyMap = extractLemmasAndFrequency(title + " " + description);
+            for (Map.Entry<String, Integer> entry : lemmaFrequencyMap.entrySet()) {
+                String lemma = entry.getKey();
+                int frequency = entry.getValue();
+
+                int lemmaId = getOrCreateLemmaId(conn, lemma);
+                saveLemmaIndex(conn, pageId, lemmaId, frequency);
+            }
+
         } catch (SQLException e) {
             logger.error("Ошибка при подключении к базе данных: ", e);
         }
     }
 
+    // Метод для проверки существования страницы в базе данных
     private static boolean isPageExist(Connection conn, int siteId, String path) throws SQLException {
         String selectPageSQL = "SELECT 1 FROM page WHERE site_id = ? AND path = ?";
         try (PreparedStatement stmt = conn.prepareStatement(selectPageSQL)) {
@@ -99,6 +103,7 @@ public class WebPageFetcher {
         }
     }
 
+    // Метод для получения или создания ID сайта
     private static int getOrCreateSiteId(Connection conn, String url) throws SQLException {
         String domain = getDomainFromUrl(url);
 
@@ -131,6 +136,87 @@ public class WebPageFetcher {
         }
     }
 
+    private static int getPageId(Connection conn, int siteId, String path) throws SQLException {
+        String selectPageSQL = "SELECT id FROM page WHERE site_id = ? AND path = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(selectPageSQL)) {
+            stmt.setInt(1, siteId);
+            stmt.setString(2, path);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("id");
+                }
+            }
+        }
+        throw new SQLException("Страница не найдена в базе данных");
+    }
+
+    private static int getOrCreateLemmaId(Connection conn, String lemma) throws SQLException {
+        String selectLemmaSQL = "SELECT id FROM lemma WHERE lemma = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(selectLemmaSQL)) {
+            stmt.setString(1, lemma);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("id");
+                }
+            }
+        }
+
+        String insertLemmaSQL = "INSERT INTO lemma (lemma) VALUES (?)";
+        try (PreparedStatement stmt = conn.prepareStatement(insertLemmaSQL, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, lemma);
+            stmt.executeUpdate();
+            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    return generatedKeys.getInt(1);
+                } else {
+                    throw new SQLException("Не удалось создать запись для леммы.");
+                }
+            }
+        }
+    }
+
+    private static void saveLemmaIndex(Connection conn, int pageId, int lemmaId, int frequency) throws SQLException {
+        String selectIndexSQL = "SELECT id FROM `index` WHERE page_id = ? AND lemma_id = ?";
+        try (PreparedStatement selectStmt = conn.prepareStatement(selectIndexSQL)) {
+            selectStmt.setInt(1, pageId);
+            selectStmt.setInt(2, lemmaId);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                if (rs.next()) {
+                    // Если запись существует, обновляем rank
+                    int indexId = rs.getInt("id");
+                    String updateRankSQL = "UPDATE `index` SET `rank` = ? WHERE id = ?";
+                    try (PreparedStatement updateStmt = conn.prepareStatement(updateRankSQL)) {
+                        updateStmt.setInt(1, frequency);
+                        updateStmt.setInt(2, indexId);
+                        updateStmt.executeUpdate();
+                    }
+                } else {
+                    // Если записи нет, создаем новую
+                    String insertIndexSQL = "INSERT INTO `index` (page_id, lemma_id, `rank`) VALUES (?, ?, ?)";
+                    try (PreparedStatement insertStmt = conn.prepareStatement(insertIndexSQL)) {
+                        insertStmt.setInt(1, pageId);
+                        insertStmt.setInt(2, lemmaId);
+                        insertStmt.setInt(3, frequency);
+                        insertStmt.executeUpdate();
+                    }
+                }
+            }
+        }
+    }
+
+
+    private static Map<String, Integer> extractLemmasAndFrequency(String text) {
+        Map<String, Integer> frequencyMap = new HashMap<>();
+        String[] words = text.split("\\W+");
+        for (String word : words) {
+            String lemma = word.toLowerCase();
+            if (lemma.length() > 1) {  // Фильтруем короткие слова, например, односимвольные
+                frequencyMap.put(lemma, frequencyMap.getOrDefault(lemma, 0) + 1);
+            }
+        }
+        return frequencyMap;
+    }
+
     private static String getDomainFromUrl(String url) {
         try {
             URL parsedUrl = new URL(url);
@@ -150,74 +236,6 @@ public class WebPageFetcher {
     private static boolean isValidUrl(String url) {
         String regex = "^(https?://)?[\\w.-]+(\\.[a-z]{2,})+.*$";
         return url.matches(regex);
-    }
-
-    private static void processLemmas(String content, int pageId) {
-        // Токенизация контента на слова и их нормализация (приведение к нижнему регистру)
-        String[] words = content.toLowerCase().split("\\W+");  // Разделение по словам, исключая символы пунктуации
-
-        for (String word : words) {
-            if (word.isEmpty()) continue;
-
-            // Проверяем существование леммы в таблице `lemma`
-            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
-                conn.setAutoCommit(false);
-
-                int lemmaId = getOrCreateLemmaId(conn, word);  // Получаем или создаем лемму
-                incrementLemmaFrequency(conn, lemmaId);  // Увеличиваем частоту леммы
-
-                // Добавление записи в таблицу `index`
-                addIndexEntry(conn, pageId, lemmaId);
-
-                conn.commit();  // Подтверждение транзакции
-            } catch (SQLException e) {
-                logger.error("Ошибка при обработке лемм: ", e);
-            }
-        }
-    }
-
-    private static int getOrCreateLemmaId(Connection conn, String lemma) throws SQLException {
-        String selectLemmaSQL = "SELECT id FROM lemma WHERE lemma = ?";
-        try (PreparedStatement selectStmt = conn.prepareStatement(selectLemmaSQL)) {
-            selectStmt.setString(1, lemma);
-            try (ResultSet rs = selectStmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getInt("id");  // Если лемма существует, возвращаем её ID
-                }
-            }
-        }
-
-        // Если лемма не найдена, вставляем её
-        String insertLemmaSQL = "INSERT INTO lemma (lemma) VALUES (?)";
-        try (PreparedStatement insertStmt = conn.prepareStatement(insertLemmaSQL, Statement.RETURN_GENERATED_KEYS)) {
-            insertStmt.setString(1, lemma);
-            insertStmt.executeUpdate();
-            try (ResultSet generatedKeys = insertStmt.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    return generatedKeys.getInt(1);  // Возвращаем ID новой леммы
-                } else {
-                    throw new SQLException("Не удалось создать лемму.");
-                }
-            }
-        }
-    }
-
-    private static void incrementLemmaFrequency(Connection conn, int lemmaId) throws SQLException {
-        // Увеличиваем частоту леммы
-        String updateLemmaSQL = "UPDATE lemma SET frequency = frequency + 1 WHERE id = ?";
-        try (PreparedStatement updateStmt = conn.prepareStatement(updateLemmaSQL)) {
-            updateStmt.setInt(1, lemmaId);
-            updateStmt.executeUpdate();
-        }
-    }
-
-    private static void addIndexEntry(Connection conn, int pageId, int lemmaId) throws SQLException {
-        String insertIndexSQL = "INSERT INTO `index` (page_id, lemma_id) VALUES (?, ?)";
-        try (PreparedStatement stmt = conn.prepareStatement(insertIndexSQL)) {
-            stmt.setInt(1, pageId);
-            stmt.setInt(2, lemmaId);
-            stmt.executeUpdate();
-        }
     }
 
     public static void main(String[] args) {
