@@ -1,15 +1,11 @@
 package searchengine;
 
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.ru.RussianAnalyzer;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.sql.*;
@@ -19,7 +15,7 @@ import java.util.Map;
 public class WebPageFetcher {
 
     private static final Logger logger = LoggerFactory.getLogger(WebPageFetcher.class);
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine";
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/search_engine"; // Используем MySQL
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = "asuzncmi666";
 
@@ -49,17 +45,32 @@ public class WebPageFetcher {
             logger.info("Заголовок страницы: {}", title);
             logger.info("Описание страницы: {}", description);
 
-            savePageToDatabase(url, title, description);
+            // Преобразуем контент в леммы и их частоты
+            Map<String, Integer> lemmas = extractLemmas(title + " " + description);
+
+            savePageToDatabase(url, title, description, lemmas);
 
         } catch (IOException e) {
             logger.error("Ошибка при загрузке страницы: {}", url, e);
         }
     }
 
-    private static void savePageToDatabase(String url, String title, String description) {
-        String content = title + " " + description;
-        Map<String, Integer> lemmas = lemmatize(content);
+    private static Map<String, Integer> extractLemmas(String content) {
+        // Используем простую лемматизацию с разделением по пробелам. Замените это на более сложное решение, если нужно.
+        Map<String, Integer> lemmaMap = new HashMap<>();
+        String[] words = content.split("\\s+");
 
+        for (String word : words) {
+            word = word.toLowerCase().replaceAll("[^a-zа-я]", ""); // Очистка от небуквенных символов
+            if (!word.isEmpty()) {
+                lemmaMap.put(word, lemmaMap.getOrDefault(word, 0) + 1);
+            }
+        }
+
+        return lemmaMap;
+    }
+
+    private static void savePageToDatabase(String url, String title, String description, Map<String, Integer> lemmas) {
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
             conn.setAutoCommit(false);
 
@@ -71,53 +82,46 @@ public class WebPageFetcher {
                 try (PreparedStatement stmt = conn.prepareStatement(insertPageSQL)) {
                     stmt.setInt(1, siteId);
                     stmt.setString(2, path);
-                    stmt.setString(3, content);
+                    stmt.setString(3, title + " " + description); // Сохраняем title и description
                     stmt.executeUpdate();
-                }
+                    conn.commit();
+                    logger.info("Страница успешно сохранена в базу данных: {}", url);
 
-                saveLemmasToDatabase(conn, siteId, path, lemmas);
-                conn.commit();
-                logger.info("Страница и леммы успешно сохранены в базу данных: {}", url);
+                    // Сохраняем леммы
+                    saveLemmasToDatabase(conn, siteId, path, lemmas);
+
+                } catch (SQLException e) {
+                    conn.rollback();
+                    logger.error("Ошибка при вставке данных в таблицу page. Транзакция откатывается.", e);
+                }
             } else {
                 logger.info("Страница уже существует в базе данных: {}", url);
             }
         } catch (SQLException e) {
-            logger.error("Ошибка при сохранении данных в базу", e);
+            logger.error("Ошибка при подключении к базе данных: ", e);
         }
     }
 
-    private static Map<String, Integer> lemmatize(String text) {
-        Map<String, Integer> lemmaCountMap = new HashMap<>();
-
-        try (RussianAnalyzer analyzer = new RussianAnalyzer()) {
-            TokenStream tokenStream = analyzer.tokenStream(null, new StringReader(text));
-            tokenStream.reset();
-
-            while (tokenStream.incrementToken()) {
-                String lemma = tokenStream.getAttribute(CharTermAttribute.class).toString();
-                lemmaCountMap.put(lemma, lemmaCountMap.getOrDefault(lemma, 0) + 1);
+    private static void saveLemmasToDatabase(Connection conn, int siteId, String path, Map<String, Integer> lemmas) throws SQLException {
+        String selectPageSQL = "SELECT id FROM page WHERE site_id = ? AND path = ?";
+        try (PreparedStatement selectStmt = conn.prepareStatement(selectPageSQL)) {
+            selectStmt.setInt(1, siteId);
+            selectStmt.setString(2, path);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                if (rs.next()) {
+                    int pageId = rs.getInt("id");
+                    // Теперь сохраняем леммы для этой страницы
+                    for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
+                        String insertLemmaSQL = "INSERT INTO lemma (page_id, lemma, frequency) VALUES (?, ?, ?)";
+                        try (PreparedStatement insertStmt = conn.prepareStatement(insertLemmaSQL)) {
+                            insertStmt.setInt(1, pageId);
+                            insertStmt.setString(2, entry.getKey());
+                            insertStmt.setInt(3, entry.getValue());
+                            insertStmt.executeUpdate();
+                        }
+                    }
+                }
             }
-            tokenStream.close();
-        } catch (IOException e) {
-            logger.error("Ошибка при лемматизации текста: ", e);
-        }
-        return lemmaCountMap;
-    }
-
-    private static void saveLemmasToDatabase(Connection conn, int siteId, String path, Map<String, Integer> lemmas) {
-        String insertLemmaSQL = "INSERT INTO lemma (site_id, path, lemma, frequency) VALUES (?, ?, ?, ?)";
-
-        try (PreparedStatement stmt = conn.prepareStatement(insertLemmaSQL)) {
-            for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
-                stmt.setInt(1, siteId);
-                stmt.setString(2, path);
-                stmt.setString(3, entry.getKey());
-                stmt.setInt(4, entry.getValue());
-                stmt.addBatch();
-            }
-            stmt.executeBatch();
-        } catch (SQLException e) {
-            logger.error("Ошибка при сохранении лемм в базу данных", e);
         }
     }
 
@@ -152,7 +156,7 @@ public class WebPageFetcher {
         String insertSiteSQL = "INSERT INTO site (domain, name) VALUES (?, ?)";
         try (PreparedStatement insertStmt = conn.prepareStatement(insertSiteSQL, Statement.RETURN_GENERATED_KEYS)) {
             insertStmt.setString(1, domain);
-            insertStmt.setString(2, domain);
+            insertStmt.setString(2, domain); // Используем domain как name
             insertStmt.executeUpdate();
             try (ResultSet generatedKeys = insertStmt.getGeneratedKeys()) {
                 if (generatedKeys.next()) {
@@ -177,7 +181,7 @@ public class WebPageFetcher {
     private static String getRelativePath(String url) {
         String domain = getDomainFromUrl(url);
         String path = url.replaceFirst("^(https?://)?(www\\.)?" + domain, "");
-        return path.startsWith("/") ? path.substring(1) : path;
+        return path.startsWith("/") ? path.substring(1) : path; // Убираем начальный слэш, если он есть
     }
 
     private static boolean isValidUrl(String url) {
